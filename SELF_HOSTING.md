@@ -119,6 +119,16 @@ curl http://127.0.0.1:8081/health/ready                 # {"status":"Healthy","t
 docker compose ps                                       # five: postgres, valkey, node-api, node-portal healthy; proxy up
 ```
 
+**If checks 4 and 5 fail with `HTTP 000` while 1 to 3 pass, the node is fine and your resolver is
+the problem.** Those two checks reach the portal by name, and `curl` uses the system resolver
+rather than a browser's. Browsers synthesize `*.localhost` to loopback on their own. A system
+resolver may not, and plain glibc does not. Add this line to `/etc/hosts` on the Docker host and
+re-run:
+
+```
+127.0.0.1 febris.localhost api.febris.localhost
+```
+
 `/health/ready` answers `Healthy` only when every dependency it checks is healthy, so that one
 field is a complete readiness answer.
 
@@ -179,7 +189,15 @@ Everything is environment variables, read from `.env`. The ones you are likely t
 | `NODE_AUTO_PROVISION_JIT` | `false` | forwarded to the portal as `Identity__Registration__AutoProvisionJit`. `true` lets an unknown external-IdP user be provisioned an account on first login. Closed by default, and inert until you actually register an SSO provider |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SENDER` / `SMTP_PASSWORD` | placeholder | outbound mail. Nothing is sent until you set these |
 | `POSTGRES_PASSWORD`, `NODE_JWT_SECRET` | generated | rotate by editing `.env` and recreating the containers |
-| `ClientDownloads:BaseUrl` | `https://www.febr.is` | where the Software Repository pages send you when this node holds no copy of a package, which is the case on every fresh node. Consulted **only** when the catalogue is empty, so a package you sync always wins. Rendering the link is not a network call and the node requests nothing. **Blank it** on an air-gapped node to get the plain empty state instead |
+
+**Two settings people look for here are not in that table, and not in `.env` at all.**
+`ClientDownloads:BaseUrl` decides where the Software Repository pages send you when this node
+holds no copy of a package, which is every node on its first boot. It defaults to
+`https://www.febr.is`, it is consulted only when the catalogue is empty so a package you sync
+always wins, and rendering the link is not a network call. To blank it on an air-gapped node, add
+`ClientDownloads__BaseUrl: ""` to the `&node-environment` block in `docker-compose.yml`. Putting
+it in `.env` does nothing at all, for the reason given under
+[Verifying it came up](#verifying-it-came-up). The `PackageFeed` settings below work the same way.
 
 **On the bootstrap admin.** Those two variables choose between three first-login paths, and the
 one you get by copying `.env.example` unedited is the third.
@@ -253,10 +271,16 @@ Who talks to what:
 A device identity cannot put anything into the catalogue, since the writes are portal-only. An
 operator does not need a device identity to read it, because the portal serves the same store.
 
-**A feed sync is the only way a package gets into the catalogue.** There is no upload form. An
-earlier ingest route existed and was removed, so if you find a page or an older document offering
-you a file picker, it is out of date. Everything below follows from that, including the air-gapped
-case, which is handled by hosting the manifest yourself rather than by uploading by hand.
+**A feed sync is the only way a CLIENT package gets into this catalogue.** There is no upload form
+for one. An earlier ingest route existed and was removed, so if you find an older document
+offering you a file picker for a client build, it is out of date. Everything below follows from
+that, including the air-gapped case, which is handled by hosting the manifest yourself rather than
+by uploading by hand.
+
+**Training modules are a different catalogue and they do have an upload form.** They are your
+content rather than our binaries, so there is no feed to sync them from. You add them at
+**Content -> Add** in the portal navigation, which takes the archive directly. Nothing in this
+section applies to them.
 
 A node whose catalogue is empty is not broken, and that is every node on its first boot. The
 Software Repository pages then link out to the project's own download page instead of showing a
@@ -335,7 +359,13 @@ like every other outbound destination it is off until you give it a URL.
 | `PackageFeed:IntervalHours` | `24` | anything under one hour is clamped up to one hour, with a warning |
 
 The scheduled run is never a dry run, so prove the URL with the form's dry run first, then set
-`PackageFeed:Url` once you are happy with the report.
+the URL once you are happy with the report.
+
+**These three are `docker-compose.yml` edits, not `.env` ones.** Add `PackageFeed__Url`,
+`PackageFeed__Channel` and `PackageFeed__IntervalHours` to the `&node-environment` block and run
+`docker compose up -d`. The scheduler lives in the portal, so that is the block that matters. A
+`PackageFeed__Url` placed in `.env` reaches no container, and the service logs its idle line as
+though you had configured nothing.
 
 ### (b) Devices pull from the catalogue
 
@@ -441,7 +471,8 @@ Very little, which is the point.
 
 1. **Register the device yourself, before the device is ever pointed here.** There is no
    self-enrolment. A device cannot introduce itself to your node, and the node has no route that
-   would let it. You create the record in the portal, under **Hardware -> Create**, and the node
+   would let it. You create the record in the portal, at **Operations -> Hardware -> Index** and
+   then the green create button on that page, and the node
    mints that device's credential at that moment.
 
    > **The credential is displayed once and never again.** It is stored as a hash, so nothing can
@@ -475,14 +506,23 @@ vcpkg registry. Verify what you download.
 
 ```sh
 sha256sum -c SHA256SUMS
+```
+
+That is what exists today, and it is worth being precise about what it proves. A checksum
+fetched from the same page as the file proves the download was not corrupted in transit. It does
+not prove where the file came from, because whoever could replace the file could replace the
+checksum beside it.
+
+Build provenance is the thing that closes that gap, and **no Febris release carries it yet.** The
+workflow change that would attest each C++ bundle is written but not merged, so v0.1.0 has none
+and a release cut today would have none either. When it lands, the check will be:
+
+```sh
 gh attestation verify febris-simulation-sdk-cpp-v<version>-win-x64.zip --repo Febris-XR/Febris_SDK
 ```
 
-The checksum proves the bytes did not change in transit. The attestation proves they were built by
-that repository's release workflow, which a checksum fetched from the same page cannot. Provenance
-will be present from v0.1.1 onward. The current release is v0.1.0, which predates it and carries
-checksums only, so the second command has nothing to verify against yet and will fail if you run
-it today.
+Running that against v0.1.0 fails, and the failure means the attestation is absent rather than
+that the file is bad.
 
 The two SDKs are held byte-identical at the same minor version by a conformance gate that runs
 before the **C++** bundle is published, so a C++ simulation and a C# one produce the same records.
@@ -662,11 +702,25 @@ chmod 600 "$BACKUP_DIR"/env-$(date +%F).bak
 That copy is secrets in the clear. Keep it wherever you keep secrets, which for most people is
 not the same place as the tarballs.
 
-**Four artifacts, then.** The dump, `storage`, `keys` and `.env`. The other three volumes need
-nothing from you. `pgdata` is what the dump reproduces. `valkeydata` holds sessions only, so
-losing it signs everyone out and costs nothing else. `caddyconfig` is regenerated on boot, and
-`caddydata` holds the self-signed CA, so keeping it saves your browsers one certificate warning
-after a rebuild and nothing more.
+**And back up your edits to the clone.** `.env` is not the only thing you changed. A deployment
+that is not the bundled trial edits tracked files, and every one of them comes back pristine from
+a fresh `git clone`. Trusting your own proxy means editing
+`ForwardedHeaders__KnownNetworks__1` in `docker-compose.yml`, because that setting is hardcoded
+there rather than read from `.env`. Real domains and real certificates mean editing
+`selfhost/Caddyfile`. A CORS allowance means editing `appsettings.json`. Lose those and the node
+comes back up refusing to log anyone in, because without a trusted proxy the Secure auth cookie
+is never emitted.
+
+```sh
+git diff HEAD > "$BACKUP_DIR"/clone-edits-$(date +%F).patch
+```
+
+**Five artifacts, then.** The dump, `storage`, `keys`, `.env`, and that patch. The other four
+volumes need nothing from you. `pgdata` is what the dump reproduces. `valkeydata` holds sessions
+only, so losing it signs everyone out and costs nothing else. `caddyconfig` is regenerated on
+boot. `caddydata` holds the self-signed CA, so keeping it saves your browsers one certificate
+warning after a rebuild. If you swapped in real domains and ACME, it also holds your account key
+and issued certificates, and discarding it forces a re-issuance.
 
 **Run the dump from inside the container, as above.** `pg_dumpall` refuses to work against a server
 newer than itself, and it aborts rather than producing a partial file:
@@ -698,8 +752,10 @@ there and you are replacing what is inside it.
 
 ```sh
 git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-node
-cp /path/to/your/env-2026-08-18.bak .env      # the ORIGINAL .env, not a fresh generate-env.sh
+export BACKUP_DIR=/wherever/you/put/the/backups     # this shell is on a new machine
+cp "$BACKUP_DIR"/env-2026-08-18.bak .env            # the ORIGINAL .env, not generate-env.sh
 chmod 600 .env
+git apply "$BACKUP_DIR"/clone-edits-2026-08-18.patch   # your config edits, or login will not work
 docker compose up -d --build
 docker compose stop node-api node-portal
 ```
@@ -798,8 +854,7 @@ a stale schema shows up here rather than as a runtime error later.
 
 Two things it does not tell you. **Analytics has no schema check** -- it is provisioned with
 `EnsureCreated` rather than migrations, so nothing verifies its shape. And a green probe says nothing
-about the ROWS. It proves the tables exist, not that your data came back. Log in and open one
-screen
+about the ROWS. It proves the tables exist, not that your data came back. Log in and open one screen
 carrying real content before you call the restore done.
 
 ### 5. Rehearse it, in a cluster of its own
@@ -815,7 +870,7 @@ Use a throwaway cluster instead, so those `\connect` lines have nowhere real to 
 
 ```sh
 docker run --rm -d --name pg-drill -e POSTGRES_USER=febris -e POSTGRES_PASSWORD=drill postgres:16-alpine
-until docker exec pg-drill pg_isready -U febris -q; do sleep 1; done
+until docker exec pg-drill pg_isready -U febris -h 127.0.0.1 -q; do sleep 1; done
 
 docker exec -i pg-drill psql -U febris -d postgres < "$BACKUP_DIR"/febris-2026-08-18.sql
 docker exec pg-drill psql -U febris -d febris_data -c '\dt'
@@ -922,8 +977,7 @@ changed password against an existing `pgdata` volume fails exactly this way.
 password policy (>= 8 characters with an upper, a lower and a digit, a symbol optional), the
 seed logs the rejection and creates *no* account -- the node still comes up and still reports
 `/health/ready` Healthy, so nothing else looks wrong. Confirm with
-`docker compose logs node-portal | grep -i 'failed creating bootstrap admin'`, which prints
-Identity's
+`docker compose logs node-portal | grep -i 'failed creating bootstrap admin'`, which prints Identity's
 own reason. Then fix the password in `.env` and `docker compose up -d node-portal` to re-run the
 seed. If `NODE_ADMIN_PASSWORD` was blank the account has no password by design -- use the
 forgot-password flow, which needs SMTP.
@@ -946,7 +1000,7 @@ exist to catch, so start here:
 
 ```sh
 curl http://127.0.0.1:8081/health/ready     # with HealthChecks:DetailedResponse=true for the detail
-docker compose logs node-api | grep -i migrat
+docker compose logs node-api | grep -iE 'migrat|provisioning'
 ```
 
 A `schema-*` check reporting unhealthy while its `database-*` check is healthy means the database
@@ -975,9 +1029,21 @@ the failure is nearly always at one of its joins rather than in the node.
 1. Can the client reach the node at all? From the device, not from your desk.
 2. Is the device registered, and does its credential belong to **this** node? A credential minted
    by a different node will authenticate against nothing here.
-3. Is the client authenticating? `docker compose logs node-api | grep -i "api/Token"` shows the
-   attempts. Repeated failures point at the credential rather than at the statements.
-4. Are statements being submitted? `docker compose logs node-api | grep -i "api/Statement"`.
+3. Is the client authenticating? **The API does not log request paths by default**, so a plain
+   grep for a route returns nothing whether the device is failing or fine. The API host does not
+   call `UseSerilogRequestLogging`, and its Serilog config overrides the `Microsoft` category to
+   `Warning`, which suppresses the framework's own per-request lines. Turn them on for the
+   diagnosis by adding `Serilog__MinimumLevel__Override__Microsoft: "Information"` to the
+   `&node-environment` block in `docker-compose.yml`, then `docker compose up -d node-api`:
+
+   ```sh
+   docker compose logs node-api | grep -i "api/Token"
+   ```
+
+   Repeated failures there point at the credential rather than at the statements. Take the
+   override back out when you are done, because it is noisy.
+4. Are statements being submitted? Same override, then
+   `docker compose logs node-api | grep -i "api/Statement"`.
 5. Only then look at the simulation. Remember the SDK does not transmit, so a simulation that
    "sent" a statement has really only handed it to the client.
 

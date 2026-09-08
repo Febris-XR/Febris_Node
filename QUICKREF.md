@@ -44,7 +44,8 @@ Probe the API on loopback, not through the proxy. Caddy answers 404 for `/health
 
 **Feed sync is the only way a client package gets in.** There is no upload form. Point
 **System -> Node -> Package Feed** at a manifest URL, dry-run it, then run it for real. Set
-`PackageFeed:Url` to have it repeat on `PackageFeed:IntervalHours`, default 24, minimum 1.
+`PackageFeed__Url` in the `&node-environment` block of `docker-compose.yml` to have it repeat on
+`PackageFeed__IntervalHours`, default 24, minimum 1. **Not** a `.env` key.
 [Deploy the client suite](SELF_HOSTING.md#deploy-the-client-suite-through-your-node)
 
 ## Back up
@@ -123,7 +124,8 @@ Every row expands in [Troubleshooting](SELF_HOSTING.md#troubleshooting).
   submits. [How records reach your node](SELF_HOSTING.md#how-a-simulations-records-reach-your-node)
 - **On Android the Mobile Server talks to your node, not the Companion.** The Companion holds no
   node URL and reaches the Server over Wi-Fi Direct.
-- **Devices do not enrol themselves.** You create each one at **Hardware -> Create** and copy the
+- **Devices do not enrol themselves.** Create each one at **Operations -> Hardware**, then the
+  create button on that page, and copy the
   credential, which is shown once and stored only as a hash.
 - **The client suites are published, at v0.2.0**, on the Febris_PC and Febris_MobileSuite
   releases pages rather than this one. Downloading them does not put them in your catalogue. That
@@ -136,9 +138,9 @@ Every row expands in [Troubleshooting](SELF_HOSTING.md#troubleshooting).
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify <file> --repo Febris-XR/Febris_SDK
 ```
 
-The checksum proves the bytes did not change in transit. The attestation proves where they came
-from, which a checksum fetched from the same page cannot. Provenance starts at v0.1.1. The current
-release is v0.1.0, so the attestation command has nothing to check yet.
+That proves the bytes did not change in transit. It does not prove where they came from, because
+whoever could swap the file could swap the checksum beside it. Build provenance would close that,
+and **no release carries it yet**. The attesting workflow change is written and unmerged, so
+`gh attestation verify` fails on every current artifact.

@@ -95,7 +95,7 @@ gate is enforced. The load-bearing ones:
 
 **A built-in artifact store, and a package feed sync that refuses more than it accepts.** The
 node is the distribution point for its own client software. The surface splits by audience:
-operators upload packages and trigger the feed sync from the **portal**, behind the same
+operators trigger the feed sync from the **portal**, behind the same
 signed-in cookie identity and admin role gates as every other operator action, while devices
 fetch through the API with their own device tokens (`api/CompanionApp` for the Companion APK,
 `api/Module` for entitlement-gated module delivery). A device identity cannot write to the
@@ -108,9 +108,11 @@ operator chooses, and its guarantees are the interesting part:
   malformed checksum, or a download that exceeds the size ceiling is refused with nothing
   written. Verifying afterwards would mean a truncated download had already become a published
   package.
-- **never overwrite.** A UUID already held with a matching checksum is `AlreadyCurrent`. The
-  same UUID advertising *different* bytes is refused and reported -- a release identity does not
-  get to change what it is.
+- **never overwrite a published version.** A UUID already held with a matching checksum is
+  `AlreadyCurrent`. That same UUID advertising the *same version* with different bytes is refused
+  and reported, because a release that is out must not change what it is. A **new** version on
+  that UUID is an ordinary update and is ingested, which is what makes a UUID a stable release
+  identity rather than a per-file one.
 - **oldest-first, as a correctness requirement.** The catalogue resolves "latest" by row
   timestamp, so whatever lands last is what devices are offered. Entries are therefore applied
   in ascending version order. Newest-first would leave every node serving the *oldest* release
@@ -122,9 +124,7 @@ operator chooses, and its guarantees are the interesting part:
 Two honest limits on that. The feed format carries a `signerSha256` per payload -- the SHA-256 of
 the signing certificate, the only field in a manifest that speaks to *origin* rather than
 integrity -- but the node does **not** yet pin or enforce it. Today it verifies the artifact
-checksum only. And the manual `Upload` path records the SHA-256 of what it stored rather than
-checking it against a declared value, because on that path there is no manifest to check
-against.
+checksum only.
 
 **LRS-style xAPI ingest with statement-UUID dedupe.** Statements arrive from at-least-once
 producers: a lost response re-POSTs the same statement, and a crash between upload and file-move
@@ -158,7 +158,9 @@ git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-
 docker compose up -d --build        # first build takes a few minutes
 ```
 
-Then open **https://febris.localhost:8443**. `generate-env.sh` prints your first-login
+Then open **https://febris.localhost:8443**, from the machine running Docker. That name resolves
+to loopback, so on a headless server tunnel it with `ssh -L 8443:127.0.0.1:8443 you@server` and
+open the same URL at the other end. `generate-env.sh` prints your first-login
 credentials and stores them in `.env`. Change the password immediately -- it was generated on
 your machine, but it is sitting in a file.
 
@@ -285,10 +287,11 @@ Pre-1.0, and honest about it.
 - **No long-term-support branch.** Fixes land on the default branch. Upgrades run migrations at
   startup. Take a database backup first, because there is no downgrade path yet.
 - **Interfaces may change** before 1.0, including configuration keys and API routes.
-- **Test suites are green** and are the honest measure of what is pinned: 298 node business-logic
-  tests, 391 in the node slice of the shared-services suite, and 5 architecture tests. They ship
-  in this repository -- [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test`
-  commands.
+- **Test suites are green** and are the honest measure of what is pinned. 298 node
+  business-logic tests and 90 architecture guards, both shipping in this repository, and
+  `.github/workflows/build.yml` runs exactly those two.
+  [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test` commands. The
+  shared-services suite left with the shared kernel on 2026-08-28 and is not here.
 - **Known gaps**, stated rather than discovered. The feed-sync tests fake the HTTP fetch and
   exercise real storage and catalogues, so the path has not been run against a live public feed.
   `signerSha256` is carried in the feed format but not enforced. External SSO is scaffolding as
