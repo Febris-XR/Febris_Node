@@ -378,10 +378,11 @@ simulation (your code, using the Febris SDK)
     v
 Febris client  (PC Launcher / Statement Manager, or the Android Companion)
     |  authenticates with a node-issued hardware credential
-    |  1. POST /api/Token/authenticate        gets a bearer token
-    |  2. POST /api/Statement/StatementInitialization   opens the attempt for one
-    |     learner and one module, node answers with the initial statement
-    |  3. POST /api/Statement/Submit                     sends the rest
+    |  1. POST /api/Token/authenticate               gets a bearer token
+    |  2. POST /api/Statement/StatementInitialization
+    |         opens the attempt for one learner and one module, and the
+    |         node answers with the initial statement
+    |  3. POST /api/Statement/Submit                 sends the rest
     v
 your node  (records stored, and they stop here)
 ```
@@ -416,9 +417,11 @@ the Mobile Server over your own network rather than from us, once the Server its
 and the Companion package is in your catalogue.
 
 So a node you stand up today is a working node with nowhere to get clients from yet. Everything
-else in this guide works. Watch the
-[Febris_Node releases](https://github.com/Febris-XR/Febris_Node/releases) page for the client
-suites, and see [Support](#support-contributions-and-licence) if you need a date.
+else in this guide works. The releases, when they come, will be on the repositories that build
+them, [Febris_PC](https://github.com/Febris-XR/Febris_PC/releases) and
+[Febris_MobileSuite](https://github.com/Febris-XR/Febris_MobileSuite/releases), and the feed you
+point a package sync at is what carries them onto your node. See
+[Support](#support-contributions-and-licence) if you need a date.
 
 ### What you configure, as the operator
 
