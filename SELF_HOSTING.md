@@ -6,6 +6,20 @@ This is the whole operator story: what you need, how to bring a node up, what it
 If you only want it running, read [Quickstart](#quickstart). Everything after that is
 operational detail.
 
+## What you are deploying, and what you are not
+
+A **node** is the delivery tier of an XR training platform. It holds your learners, your training
+modules and the xAPI records their sessions produce, it serves the desktop and Android clients, and
+it is the system of record for all of it. One node is a complete product.
+
+What it is **not** is half of something. There is a central hub in the wider Febris product, and it
+is not part of this. It is not published, it is not required, and a node never phones one. The
+federation seam exists in the code and ships disabled, described under
+[Hub federation](#hub-federation), and a node with it off is complete rather than degraded. If you
+are looking for the part that talks to Febris, there isn't one.
+
+You need no Febris account, no licence key and no network service we run.
+
 ---
 
 ## Prerequisites
@@ -17,8 +31,41 @@ operational detail.
 | **POSIX shell (bash)** | `generate-env.sh` is a bash script | `bash --version` |
 | **.NET 8 SDK** | only if you want to build or test outside Docker. The compose path does not need it | `dotnet --version` |
 
-You do **not** need a Febris account, licence key, or any network service we run. A node is
-standalone. That is the point of the project, not a configuration option.
+### Hosts
+
+| Host | Status |
+|---|---|
+| Linux x86-64 with Docker Engine 24+ and Compose v2 | **Supported.** This is what the stack is built and tested on |
+| Linux on arm64 | Untested. The base images publish arm64 variants, so it may work. Nobody has verified it |
+| Windows or macOS with Docker Desktop | Untested. Expected to work, and not something to discover in production |
+| Bare metal, no Docker | Best-effort, see [Running without Docker](#running-without-docker). Not covered by the smoke script |
+
+Anything marked untested means exactly that. It is not a warning that it fails, and it is not a
+promise that it works.
+
+### Resources
+
+| | Minimum | Comfortable |
+|---|---|---|
+| vCPU | 2 | 4 |
+| RAM | 4 GB | 8 GB |
+| Disk | 20 GB | depends entirely on your media, see below |
+
+Five containers, two of them databases, so the floor is about memory rather than CPU. Disk is the
+number that will surprise you. The 20 GB minimum covers images, the databases and room to work. It
+does **not** account for training module archives or session video, which are the things that
+actually grow, and which live in the `storage` volume. Size that against your own content and watch
+it, because a full disk stops Postgres writing.
+
+### Ports
+
+| Port | Bound to | What it is |
+|---|---|---|
+| `${NODE_HTTPS_PORT}`, default 8443 | all interfaces | HTTPS, via the bundled Caddy. The portal and the API both sit behind it |
+| `${NODE_API_HTTP_PORT}`, default 8081 | `127.0.0.1` only, by default | the API's plain HTTP port. Health probes use it. Change `NODE_API_HTTP_BIND` to expose it, and understand why before you do |
+
+Nothing else is published. Postgres and Valkey are reachable only from the compose network, not
+from the host, which is deliberate.
 
 ---
 
@@ -255,6 +302,74 @@ The kinds that work end-to-end today are **`AndroidMobileServer` (200)** and
 `PC = 100`, `CSharp = 400` and `CPP = 500` are reserved values in the enum and in the manifest
 format, but there is no PC-through-node delivery flow -- the PC suite installs from a zip. The
 slots exist so the feed format does not need to change when that lands.
+
+---
+
+## How a simulation's records reach your node
+
+This is the path that makes a node worth running, and it has one surprise in it, so it is worth
+reading before you plan an integration.
+
+```
+simulation (your code, using the Febris SDK)
+    |  builds xAPI statements, hands them over as "sendable"
+    v
+Febris client  (PC Launcher / Statement Manager, or the Android Companion)
+    |  authenticates with a node-issued hardware credential
+    |  POST /api/Token/authenticate   then   POST /api/Statement/Submit
+    v
+your node  (records stored, and they stop here)
+```
+
+**The SDK does not talk to your node.** That is the surprise. It has no HTTP client and no endpoint
+setting, and there is nothing in it to point at a server. It builds statements and exposes them
+through calls like `GetSendableDispatch` and `EndSimulation`, and the Febris client that launched
+the simulation is what collects and transmits them. So a simulation author never configures a node
+URL, and an operator never gives one to a simulation author.
+
+That also means there is no way to submit a statement from a simulation without a Febris client in
+the loop. If you were planning to post to the node directly from your own code, the API is there
+and it is authenticated per device, but that is an integration you would be building yourself
+rather than a supported path.
+
+### What you configure, as the operator
+
+Very little, which is the point.
+
+1. **Register the device.** The portal has a Hardware section and a Registration Settings section.
+   A client registers against your node and the node mints the credential it will use from then on.
+   The credential belongs to the node that issued it.
+2. **Point the client at your node.** The client needs your node's URL. Everything after that is
+   the credential exchange above.
+3. **Nothing about xAPI itself.** There is no LRS endpoint to configure, no shared secret to
+   distribute and no per-simulation setup on the node.
+
+Records land in the node's xAPI database and stay there. See
+[Outbound connections](#outbound-connections-this-node-makes) for why nothing forwards them on.
+
+### Getting the SDKs
+
+The SDKs are consumed by whoever writes the simulation, not installed on the node.
+
+```sh
+dotnet add package Febris.Simulation.XApiSdk
+```
+
+The C++ SDK is a Windows x64 bundle on the
+[Febris_SDK releases](https://github.com/Febris-XR/Febris_SDK/releases), also available through a
+vcpkg registry. Verify what you download.
+
+```sh
+sha256sum -c SHA256SUMS
+gh attestation verify febris-simulation-sdk-cpp-<version>-win-x64.zip --repo Febris-XR/Febris_SDK
+```
+
+The checksum proves the bytes did not change in transit. The attestation proves they were built by
+that repository's release workflow, which a checksum fetched from the same page cannot. Provenance
+is present from v0.1.1 onward, and releases before it carry checksums only.
+
+The two SDKs are held byte-identical at the same minor version by a conformance gate that runs
+before either is published, so a C++ simulation and a C# one produce the same records.
 
 ---
 
@@ -617,3 +732,71 @@ user run forgot-password. See [Adding users](#adding-users).
 
 **Port already in use.** Change `NODE_HTTPS_PORT` (or `NODE_API_HTTP_PORT`, which publishes the
 plain-HTTP API on `127.0.0.1:8081` by default) in `.env` and `docker compose up -d` again.
+
+**A migration failed.** The three migrated databases are brought up to date before the host starts,
+and a failure there is logged and skipped rather than crashing the process, which means the node
+can come up with a half-applied schema and no obvious error. That is what the schema health checks
+exist to catch, so start here:
+
+```sh
+curl http://127.0.0.1:8081/health/ready     # with HealthChecks:DetailedResponse=true for the detail
+docker compose logs node-api | grep -i migrat
+```
+
+A `schema-*` check reporting unhealthy while its `database-*` check is healthy means the database
+is reachable and its schema is behind. **Do not hand-edit the schema to catch up.**
+`__EFMigrationsHistory` would still name the migration as applied and the node would never
+reproduce it. Restore the pre-upgrade dump from [Restoring](#restoring) and retry the upgrade.
+
+**Disk full.** Postgres stops accepting writes before anything else visibly breaks, so the first
+symptom is usually saves failing while the site still loads.
+
+```sh
+df -h
+docker system df -v | grep -A6 "Local Volumes"
+```
+
+The volume that grows is `febris-node_storage`, holding module archives and session video, and
+`pgdata` follows it. Reclaim space by pruning unused images with `docker image prune`, by moving
+old media out of the storage volume, or by shortening retention. `AnalyticsRetention:PurgeAfterDays`
+is on by default and the video and account purgers are not, so check what you actually have set
+before assuming anything is being cleaned up.
+
+**Records are not arriving from clients.** Work along the path in
+[How a simulation's records reach your node](#how-a-simulations-records-reach-your-node), because
+the failure is nearly always at one of its joins rather than in the node.
+
+1. Can the client reach the node at all? From the device, not from your desk.
+2. Is the device registered, and does its credential belong to **this** node? A credential minted
+   by a different node will authenticate against nothing here.
+3. Is the client authenticating? `docker compose logs node-api | grep -i "api/Token"` shows the
+   attempts. Repeated failures point at the credential rather than at the statements.
+4. Are statements being submitted? `docker compose logs node-api | grep -i "api/Statement"`.
+5. Only then look at the simulation. Remember the SDK does not transmit, so a simulation that
+   "sent" a statement has really only handed it to the client.
+
+Rate limiting is worth ruling out early if a fleet of devices all authenticate at once, since the
+limiter buckets by resolved client IP and every device behind one NAT looks like one caller. See
+[the note on `IpRateLimiting:RealIpHeader`](#leave-ipratelimitingrealipheader-empty), and do not
+solve it by setting that key.
+
+---
+
+## Support, contributions and licence
+
+**Support.** There is no support contract and no service behind this. Issues and pull requests on
+[Febris-XR/Febris_Node](https://github.com/Febris-XR/Febris_Node) are the whole channel, answered
+on a best-effort basis. Security reports go through the process in `SECURITY.md` rather than a
+public issue.
+
+**Contributions** are welcome, and `CONTRIBUTING.md` is the shape of them. The most useful thing
+you can send is a report from a deployment that is not ours, because the failures that matter most
+here are the ones nobody on this side can reproduce.
+
+**Licence.** The node is **AGPL-3.0-only**, and the practical consequence is the one people get
+wrong. Running a modified node as a network service means the people using it are entitled to that
+modified source. Running an unmodified node, or modifying it privately without offering it as a
+service to others, obliges you nothing beyond keeping the notices intact. The SDKs are Apache-2.0,
+deliberately, so building a simulation against them puts no copyleft obligation on your simulation.
+
+`THIRD-PARTY-NOTICES.md` lists what ships alongside and under what terms.
