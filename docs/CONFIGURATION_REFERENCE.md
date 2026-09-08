@@ -465,11 +465,13 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `ClientDownloads:BaseUrl` | portal | LIVE | operator-choice | `https://www.febr.is`. an absent section keeps that default, so link-out works on a node nobody configured | `Febris_Shared/shared/FebrisSharedServices/ClientDownloadOptions.cs` |
+| `ClientDownloads:BaseUrl` | portal | LIVE | operator-choice | `https://www.febr.is`. an absent section keeps that default, so link-out works on a node nobody configured | `enduser/FebrisEndUserPortal/ClientDownloadOptions.cs` |
 
-- **`ClientDownloads:BaseUrl`**: Where the Software Repository pages send an operator when this node holds **no local copy** of a client package. A node's catalogue starts empty and only fills through a manual portal upload or a feed sync, and nothing obliges a self-host operator to do either, so before this those pages were a permanent dead end on every fresh deployment for software that does exist.
+- **`ClientDownloads:BaseUrl`**: Where the Software Repository pages send an operator when this node holds **no local copy** of a client package. A node's catalogue starts empty and fills only through a feed sync, and nothing obliges a self-host operator to run one, so before this those pages were a permanent dead end on every fresh deployment for software that does exist.
 
-  **Local package always wins.** This is consulted only when nothing is held, so an operator who uploads their own build keeps serving it and never sees an external link. **Blank it to disable link-out entirely**: an air-gapped node then shows the plain empty state and renders no external URL at all, which is the supported air-gap posture. A LAN mirror is the other option, since any `http(s)` root serving the same page works, including one under a subdirectory.
+  > **CORRECTED 2026-09-08.** This paragraph used to say the catalogue fills "through a manual portal upload or a feed sync", and the paragraph below said an operator "who uploads their own build" keeps serving it. The upload path was removed on 2026-08-31, which the `PackageFeed:Url` entry above states correctly. This entry was missed by that edit and contradicted it.
+
+  **A held package always wins.** This is consulted only when nothing is held, so an operator whose feed sync has brought a build in keeps serving it and never sees an external link. **Blank it to disable link-out entirely.** An air-gapped node then shows the plain empty state and renders no external URL at all, which is the supported air-gap posture. A LAN mirror is the other option, since any `http(s)` root serving the same page works, including one under a subdirectory.
 
   A value that is not an absolute `http` or `https` URL is rejected and treated as disabled, deliberately, so a typo cannot become a relative link resolving against the node's own host and sending an operator to a 404 on their own portal.
 

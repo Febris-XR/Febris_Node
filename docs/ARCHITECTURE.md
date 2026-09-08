@@ -14,7 +14,7 @@ in-progress migration rather than a finished design. Those places are called out
 
 ## The projects
 
-Eight projects make up the node, plus three test projects under `tests/`. Directory names are
+Four projects make up the node, plus two test projects under `tests/`. Directory names are
 historical (`FebrisEndUser*`), and assembly names are the current ones.
 
 | Directory | Assembly | Role |
@@ -23,10 +23,12 @@ historical (`FebrisEndUser*`), and assembly names are the current ones.
 | `enduser/FebrisEndUserApi` | `Febris.UserNode.Api` | ASP.NET Core Web API. Device JWT auth, xAPI ingest, client-software delivery. |
 | `enduser/FebrisEndUserBLL` | `Febris.UserNode.LogicLayer` | Business logic. Authorization filters and middleware, xAPI statement handling, health checks. |
 | `enduser/FebrisEndUserDAL` | `Febris.UserNode.DataAccessLayer` | EF Core `DbContext`s, migrations, query classes, database provisioning. |
-| `shared/FebrisEnumLibrary` | `Febris.EnumLibrary` | Enums and role constants. No dependencies at all. |
-| `shared/FebrisModelLibrary` | `Febris.ModelLibrary` | Entities, view models, API contracts. Carries EF Core + Npgsql. |
-| `shared/FebrisSharedServices` | `Febris.SharedServices` | Infrastructure: logging, email, JWT signing, the storage seam, transport/CORS policy, xAPI binding. |
-| `shared/FebrisXApiModels` | `Febris.XApi.Models` | The xAPI POCO contract, `netstandard2.0`. See [vendoring](#the-xapi-models-vendoring) below. |
+
+> **CORRECTED 2026-09-08.** This table used to carry four more rows, under a `shared/` directory,
+> for `Febris.EnumLibrary`, `Febris.ModelLibrary`, `Febris.SharedServices` and
+> `Febris.XApi.Models`. **There is no `shared/` directory in this repository.** All four arrive as
+> NuGet `PackageReference`s, which every project under `enduser/` declares. The count was wrong
+> too, at eight projects and three test projects against the six `.csproj` files that exist.
 
 `Febris.EnumLibrary`, `Febris.ModelLibrary` and `Febris.SharedServices` are referred to
 throughout as **the triad**. They plus `Febris.XApi.Models` are the four libraries a deployment
@@ -214,7 +216,7 @@ disk. That is deliberate: a guard that referenced the projects it polices could 
 across the boundary.
 
 **`ProjectGraph.cs`** is the shared helper. It walks up from the test assembly to find the repo
-root -- identified as the directory containing `enduser/` and `shared/` -- then parses
+root, identified as the directory containing `enduser/`, then parses
 `ProjectReference` elements into a direct and a transitive reference graph, skipping anything
 under `bin/` or `obj/`.
 
@@ -279,19 +281,22 @@ carve-out, not a hidden dependency: the launch path, for example, was deliberate
 central seat check onto the node's own `HardwareLinkedModule` link, so the central commerce
 dependency was removed rather than stubbed.
 
-## The xAPI models vendoring
+## The xAPI models contract
 
-`shared/FebrisXApiModels` (`Febris.XApi.Models`) is the xAPI contract keystone: the pure xAPI
+`Febris.XApi.Models` is the xAPI contract keystone. The pure xAPI
 POCOs and their interfaces on `netstandard2.0`, so every tier -- this node on net8, and the client
 tiers that are not in this repository -- can consume one contract. The heavy net8
 `Febris.ModelLibrary` (EF Core, Npgsql) references *it*, never the reverse, which is what keeps
 the contract free of data-access weight.
 
-**In this first cut it is vendored source**, built from `shared/FebrisXApiModels` as a
-`ProjectReference`. It is intended to become a published NuGet package. When that lands, the
-`ProjectReference` in `Febris.ModelLibrary.csproj` becomes a `PackageReference` and this
-directory goes away. Until then, treat the types here as the canonical definition and expect the
-directory to disappear in a future release.
+**It is a published NuGet package**, at 0.1.0 on nuget.org. It reaches this repository
+transitively through `Febris.ModelLibrary`, which every project under `enduser/` declares as a
+`PackageReference`. No xAPI source is vendored here.
+
+> **CORRECTED 2026-09-08.** This section used to say the contract was vendored source in this
+> first cut, built from a `shared/FebrisXApiModels` directory as a `ProjectReference`, and that
+> the swap to a package was still to come with the directory then going away. The swap happened.
+> The package is live and the directory is not in this repository.
 
 The namespaces (`Febris.ModelLibrary.Models.XApiModels`,
 `Febris.ModelLibrary.Interfaces.XApiModelInterfaces`) deliberately do not match the assembly
@@ -304,9 +309,9 @@ Stated plainly, because you will find them:
 * **Two file-access paths coexist.** `IStorageProvider` is the intended seam and the artifact
   store uses it, but older code -- including the raw xAPI statement JSON write -- still goes
   through `FileServerHandler` and `StaticDetails`. Migrating the remainder is unfinished work.
-* **Legacy namespaces in the logic layer.** 20 of the 81 source files in
+* **Legacy namespaces in the logic layer.** 22 of the 64 source files in
   `enduser/FebrisEndUserBLL` still declare the pre-rename `Febris.PrimaryLogicLayer.*` namespace.
-  The other 61 use `Febris.UserNode.*`, as does every namespaced file in the API, Portal and DAL.
+  The other 42 use `Febris.UserNode.*`, as does every namespaced file in the API, Portal and DAL.
   The assembly name is `Febris.UserNode.LogicLayer` throughout. A `using` for
   `Febris.PrimaryLogicLayer.Logic.*` next to one for `Febris.UserNode.LogicLayer.Logic.*` is not a
   mistake -- both resolve inside the same assembly.
