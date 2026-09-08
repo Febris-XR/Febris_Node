@@ -43,6 +43,17 @@ already-provisioned `pgdata` volume and every issued device token still depend o
 ### Verifying it came up
 
 ```sh
+./selfhost/smoke.sh
+```
+
+It asserts all five services are running, that liveness and readiness both answer, that the portal
+responds through the proxy, and that the proxy is still refusing `/health/*` from outside. It exits
+non-zero if any of that fails, which is why every procedure in this document ends with it. Ports
+come from your `.env`, so it follows whatever you configured.
+
+By hand, the two commands it wraps are:
+
+```sh
 curl http://127.0.0.1:8081/health/ready                 # {"status":"Healthy","totalDurationMs":7}
 docker compose ps                                       # five: postgres, valkey, node-api, node-portal healthy; proxy up
 ```
@@ -408,8 +419,13 @@ that cannot be decrypted, and the symptom is not an obvious error.
 
 ```sh
 docker compose up -d
-curl http://127.0.0.1:8081/health/ready
+./selfhost/smoke.sh
 ```
+
+`smoke.sh` asserts every service is running, that liveness and readiness both answer, that the
+portal responds through the proxy, and that the proxy is still refusing `/health/*` from outside.
+It exits non-zero if any of those fail, so it works as the last line of a restore script or a cron
+job as well as by hand. To probe readiness alone, `curl http://127.0.0.1:8081/health/ready`.
 
 `/health/ready` proves each database is reachable, and the `schema-user`, `schema-data` and
 `schema-xapi` checks additionally prove there are no unapplied migrations, so a restore that produced

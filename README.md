@@ -160,6 +160,13 @@ your machine, but it is sitting in a file.
 Verify:
 
 ```sh
+./selfhost/smoke.sh   # every service up, both probes healthy, proxy still refusing /health/*
+```
+
+That is the same check every other procedure in [`SELF_HOSTING.md`](SELF_HOSTING.md) ends with, and
+it exits non-zero if anything fails. To do it by hand instead:
+
+```sh
 curl http://127.0.0.1:8081/health/ready   # {"status":"Healthy","totalDurationMs":7}
 docker compose ps                          # postgres, valkey, node-api, node-portal, proxy
 ```
