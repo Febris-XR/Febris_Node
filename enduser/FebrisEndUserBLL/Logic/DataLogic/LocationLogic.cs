@@ -90,24 +90,25 @@ namespace Febris.PrimaryLogicLayer.Logic.DataLogic
             //{
             //    return null;
             //}
-            Location output = new Location();            
-            double longitude = 0;
-            double latitude = 0;
+            Location output = new Location();
             try
             {
                 if (!User.IsLocalAdmin()||!User.IsLocalFebrisAdmin())
                 {
                     return null;
                 }
-               
-                (latitude, longitude) = Geocoder.GetGeoCodes(input.Address,
-                                                               input.City,
-                                                               input.ZipCode,
-                                                               input.State,
-                                                               input.Country);
-                input.Latitude = latitude;
-                input.Longitude = longitude;
-                output = await _context.Create(input);                
+
+                // Latitude and Longitude are stored exactly as supplied.
+                //
+                // They used to be overwritten here by a Geocoder lookup against
+                // GeoDataUrls:GeoCoderServerAPIUrl. The only thing that ever read those
+                // coordinates was the Leaflet map partial on Views/Location/Index.cshtml, which
+                // the owner ruled out and ROADMAP 18 removed. That left a write with no reader
+                // and an outbound call on a save path. On a shipped node the key is empty, so the
+                // call could not succeed anyway and its failure was suppressed, meaning every
+                // Location saved with zeroed coordinates and no error. Removed rather than
+                // repaired, because the feature it fed is gone by ruling.
+                output = await _context.Create(input);
             }
             catch (Exception ex)
             {
@@ -120,8 +121,6 @@ namespace Febris.PrimaryLogicLayer.Logic.DataLogic
         #region Update
         public async Task<Location> Update(Location input)
         {
-            double longitude = 0;
-            double latitude = 0;
             Location output = new Location();
             try
             {
@@ -131,17 +130,9 @@ namespace Febris.PrimaryLogicLayer.Logic.DataLogic
                 }
 
                 Location original = await _context.Get(input.Id);
-                                
-                if(input.Longitude==0 && input.Latitude == 0)
-                {
-                    (latitude, longitude) = Geocoder.GetGeoCodes(input.Address,
-                                                               input.City,
-                                                               input.ZipCode,
-                                                               input.State,
-                                                               input.Country);
-                    input.Latitude = latitude;
-                    input.Longitude = longitude;
-                }
+
+                // The Geocoder backfill that used to sit here, firing whenever both coordinates
+                // were zero, is gone with the map that read them. See Create above.
 
                 //use input to find subscription
                 output = await _context.Update(input);

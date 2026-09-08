@@ -468,13 +468,33 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
   **Rendering a link is not a network call.** The node never requests these URLs and sends nothing anywhere. Only the operator's browser travels, and only if they click, so the node's offline-first posture is unchanged. The per-kind anchors this appends (`#pc`, `#mobile-server`, `#mobile-companion`, `#sdk-csharp`, `#sdk-cpp`) are a contract with the landing site generator and are pinned by `ClientDownloadOptionsTests`.
 
-### `GeoDataUrls`
+### `GeoDataUrls` (REMOVED)
 
-| Key | Hosts | Status | Category | Default when absent | Read at |
-|---|---|---|---|---|---|
-| `GeoDataUrls:GeoCoderServerAPIUrl` | Portal | DEAD-CODE-PATH | residue | No observable difference on a node: the guard returns null before the read. If the guard were ... | `shared/FebrisSharedServices/Geocoder.cs` |
+**No `GeoDataUrls` key exists on either host, and nothing reads one.** The section is kept here so
+an operator upgrading from an earlier node, or reading an older template, can see that its absence
+is deliberate rather than an omission.
 
-- **`GeoDataUrls:GeoCoderServerAPIUrl`**: read by Geocoder, whose only callers are LocationLogic.Create/Update behind `if (!IsLocalAdmin() \|\| !IsLocalFebrisAdmin()) return null.` -- a De Morgan inversion requiring BOTH Admin and SuperAdmin, and SuperAdmin is not a node role. Unreachable on a node until that guard is fixed (docs/BUGS.md). Kept because the geocoder is real code with a real bug, not residue. (census: LIVE).
+It configured a geocoding endpoint called from `LocationLogic.Create` and `.Update` to stamp
+coordinates onto a saved Location. Three independent facts made it residue rather than a feature.
+
+1. **Nothing read the coordinates.** Their only consumer was the Leaflet map partial on
+   `Views/Location/Index.cshtml`, which the owner ruled out and ROADMAP 18 removed.
+2. **The callers were unreachable anyway.** Both sit behind
+   `if (!IsLocalAdmin() || !IsLocalFebrisAdmin()) return null`, a De Morgan inversion demanding
+   BOTH Admin and SuperAdmin, and SuperAdmin is not a node role. The guard bug is recorded in
+   `docs/BUGS.md` and is unaffected by this removal.
+3. **The key shipped blank, so the call could not succeed.** An empty value threw
+   `UriFormatException` inside `Geocoder.GetGeoCodes`, whose catch suppressed it and returned the
+   fallback coordinates 39.8283 and -98.5795, the geographic centre of the United States.
+
+Removing the callers therefore changes no observable behaviour. What it does change is the node's
+network posture, which is why it is worth recording. `Geocoder` was the last thing that could
+originate an outbound request without an operator configuring one. A node now reaches the network
+only for destinations an operator has explicitly named, namely mail and the client artifact feed.
+
+`Geocoder` itself still exists in the published `Febris.SharedServices` package and is untouched
+here, because removing a public type from a released package is a breaking change for no gain. It
+has no caller in this repository.
 
 
 ## Not wired: external identity providers
@@ -525,7 +545,7 @@ Each of these was in one or both templates and is read by nothing that runs on a
 | `LicenseKey` | legacy hub-federation fallback pair with ApiUrlPath. The code path stays for existing deployments (HubFederationGateTests), the templates stop advertising it. Configure HubFederation instead. |
 | `ApiUrlPath` | see LicenseKey. |
 | `EmailSender (API host)` | no IEmailSender registration and no mail consumer on the API host. The Portal keeps its section. |
-| `GeoDataUrls (API host)` | no Geocoder reference on the API host. The Portal keeps GeoCoderServerAPIUrl. |
+| `GeoDataUrls` (both hosts) | the API host never referenced Geocoder. The Portal's `GeoCoderServerAPIUrl` has now gone too, since its callers were removed. See the `GeoDataUrls` (REMOVED) section above. |
 | `GeoDataUrls:TileServerAPIUrl` | fed a Leaflet map broken at three levels. The whole map surface was removed per the owner ruling "remove the map surface, do not vendor the library". |
 | `JwtSettings:Issuer` | the API's AddJwtBearer registration never executes (UseAuthentication is commented out, and the custom filter validates with ValidateIssuer=false) and the mint stamps no iss claim. |
 | `JwtSettings:Audience` | same as Issuer, ValidateAudience=false and no aud claim minted. |

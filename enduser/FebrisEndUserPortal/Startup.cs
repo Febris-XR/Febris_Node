@@ -433,8 +433,9 @@ namespace Febris.UserNode.Portal
             //    (Configuration.GetSection("ApiPaths"));
             //API for tile server
             // The commented-out services.Configure<GeoDataUrls> that sat here was half of a dead map
-            // widget; both halves went in ROADMAP 18. GeoDataUrls:GeoCoderServerAPIUrl is still read,
-            // by Geocoder through StaticDetails.PassedBackConfig, not through options binding.
+            // widget. Both halves went in ROADMAP 18, and the third piece, the Geocoder call on the
+            // Location save path that wrote coordinates the removed map was the only reader of, is
+            // now gone too. No GeoDataUrls key is read anywhere, so none ships.
             #endregion
 
             Log.Information("Configure Model setup Complete");
