@@ -72,7 +72,7 @@ from the host, which is deliberate.
 ## Quickstart
 
 ```sh
-git clone <this-repo> febris-node && cd febris-node
+git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-node
 ./selfhost/generate-env.sh          # writes .env with fresh secrets, chmod 600
 docker compose up -d --build        # first build takes a few minutes
 ```
