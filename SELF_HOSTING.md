@@ -376,7 +376,7 @@ reading before you plan an integration.
 simulation (your code, using the Febris SDK)
     |  builds xAPI statements, hands them over as "sendable"
     v
-Febris client  (PC Launcher / Statement Manager, or the Android Companion)
+Febris client  (PC Launcher + Statement Manager, or the Android Mobile Server)
     |  authenticates with a node-issued hardware credential
     |  1. POST /api/Token/authenticate               gets a bearer token
     |  2. POST /api/Statement/StatementInitialization
@@ -397,6 +397,13 @@ There is also `POST /api/Statement/Backup`, which both clients keep as a permiss
 do not configure it and it needs nothing from you. It is worth knowing the name exists if you go
 reading your own access logs.
 
+**On Android it is the Mobile Server that talks to your node, never the Companion.** The Companion
+runs on the headset, holds no node URL and no hardware credential, and has no code that reaches a
+node at all. It hands its statements to the Mobile Server over a Wi-Fi Direct peer link, and the
+Server is the device you register and point at your node. That is the same direction the Companion
+APK travels, from your node to the Server and on to the headset. If you are looking for somewhere
+to type your node's URL, it is on the Server.
+
 **The SDK does not talk to your node.** That is the surprise. It has no HTTP client and no endpoint
 setting, and there is nothing in it to point at a server. It builds statements and exposes them
 through calls like `GetSendableDispatch` and `EndSimulation`, and the Febris client that launched
@@ -408,20 +415,25 @@ the loop. If you were planning to post to the node directly from your own code, 
 and it is authenticated per device, but that is an integration you would be building yourself
 rather than a supported path.
 
-**Where the clients come from, today.** This is the honest answer and you should read it before
-you plan a deployment. The simulation SDKs are published and anyone can consume them. The clients
-that transmit are not. The Windows PC suite and the Android suite are built from repositories that
-have not published a release yet, so there is no download link to give you and nothing for your
-node's catalogue to sync. The one exception is the Android Companion, which reaches a headset from
-the Mobile Server over your own network rather than from us, once the Server itself is installed
-and the Companion package is in your catalogue.
+**Where the clients come from.** Both suites are published, at v0.2.0.
 
-So a node you stand up today is a working node with nowhere to get clients from yet. Everything
-else in this guide works. The releases, when they come, will be on the repositories that build
-them, [Febris_PC](https://github.com/Febris-XR/Febris_PC/releases) and
-[Febris_MobileSuite](https://github.com/Febris-XR/Febris_MobileSuite/releases), and the feed you
-point a package sync at is what carries them onto your node. See
-[Support](#support-contributions-and-licence) if you need a date.
+| Suite | Where | Assets |
+|---|---|---|
+| Windows PC | [Febris_PC releases](https://github.com/Febris-XR/Febris_PC/releases) | `FebrisPCSuite-0.2.0-win-x64.msi`, and a `.zip` of the same build |
+| Android | [Febris_MobileSuite releases](https://github.com/Febris-XR/Febris_MobileSuite/releases) | `febris-mobile-server-v0.2.0.apk` and `febris-mobile-companion-v0.2.0.apk`, each also as a `.zip` |
+
+Read [A one-time uninstall is coming for Android](#a-one-time-uninstall-is-coming-for-android)
+before you put the Android v0.2.0 builds on more than a couple of devices.
+
+**Downloading them does not put them in your catalogue.** Nothing on those pages reaches your node
+on its own. To serve them from your node, host a manifest that references those artifacts and point
+a feed sync at it, per
+[Pull from a release feed](#a-pull-from-a-release-feed-the-only-way-in). Until you do, your
+Software Repository pages stay empty and link out instead.
+
+The simulation SDKs are separate from all of this and are published too, on nuget.org and on the
+Febris_SDK releases page. They are consumed by whoever writes the simulation, never installed on
+the node.
 
 ### What you configure, as the operator
 
@@ -463,12 +475,14 @@ vcpkg registry. Verify what you download.
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify febris-simulation-sdk-cpp-<version>-win-x64.zip --repo Febris-XR/Febris_SDK
+gh attestation verify febris-simulation-sdk-cpp-v<version>-win-x64.zip --repo Febris-XR/Febris_SDK
 ```
 
 The checksum proves the bytes did not change in transit. The attestation proves they were built by
 that repository's release workflow, which a checksum fetched from the same page cannot. Provenance
-is present from v0.1.1 onward, and releases before it carry checksums only.
+will be present from v0.1.1 onward. The current release is v0.1.0, which predates it and carries
+checksums only, so the second command has nothing to verify against yet and will fail if you run
+it today.
 
 The two SDKs are held byte-identical at the same minor version by a conformance gate that runs
 before the **C++** bundle is published, so a C++ simulation and a C# one produce the same records.

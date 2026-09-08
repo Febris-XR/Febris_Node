@@ -42,7 +42,7 @@ Probe the API on loopback, not through the proxy. Caddy answers 404 for `/health
 
 ## Get packages into the catalogue
 
-**Feed sync is the only way in.** There is no upload form. Point
+**Feed sync is the only way a client package gets in.** There is no upload form. Point
 **System -> Node -> Package Feed** at a manifest URL, dry-run it, then run it for real. Set
 `PackageFeed:Url` to have it repeat on `PackageFeed:IntervalHours`, default 24, minimum 1.
 [Deploy the client suite](SELF_HOSTING.md#deploy-the-client-suite-through-your-node)
@@ -121,10 +121,13 @@ Every row expands in [Troubleshooting](SELF_HOSTING.md#troubleshooting).
 - **The SDK does not talk to your node.** It builds statements, a Febris client transmits them,
   and the client opens the attempt with `/api/Statement/StatementInitialization` before it
   submits. [How records reach your node](SELF_HOSTING.md#how-a-simulations-records-reach-your-node)
+- **On Android the Mobile Server talks to your node, not the Companion.** The Companion holds no
+  node URL and reaches the Server over Wi-Fi Direct.
 - **Devices do not enrol themselves.** You create each one at **Hardware -> Create** and copy the
   credential, which is shown once and stored only as a hash.
-- **The client suites are not published yet.** A node stood up today works and has nowhere to get
-  clients from. The SDKs are published and usable now.
+- **The client suites are published, at v0.2.0**, on the Febris_PC and Febris_MobileSuite
+  releases pages rather than this one. Downloading them does not put them in your catalogue. That
+  takes a feed sync against a manifest you host.
 - **Only two ports are published.** 8443 through Caddy, and 8081 bound to loopback. The databases
   are not reachable from the host.
 - **`docker compose down -v` destroys every synced package.** `down` on its own does not.
@@ -137,4 +140,5 @@ gh attestation verify <file> --repo Febris-XR/Febris_SDK
 ```
 
 The checksum proves the bytes did not change in transit. The attestation proves where they came
-from, which a checksum fetched from the same page cannot. Provenance is present from v0.1.1 onward.
+from, which a checksum fetched from the same page cannot. Provenance starts at v0.1.1. The current
+release is v0.1.0, so the attestation command has nothing to check yet.

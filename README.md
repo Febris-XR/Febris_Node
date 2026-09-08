@@ -245,13 +245,13 @@ resolves the controllers' dependency graphs, the same resolutions the first inbo
 performs. "Works with no hub" is therefore a build gate rather than a promise. **A node with
 default configuration makes no outbound call to any Febris service.**
 
-Also not here, and the distinction matters. The **simulation SDKs are published**, on nuget.org,
-on the [Febris_SDK releases](https://github.com/Febris-XR/Febris_SDK/releases) page and through a
-vcpkg registry, so anyone can build a simulation against them today. The **Windows/PC client and
-the Android suite are not**. They live in
-separate repositories that have not published a release yet, so there is no download link for
-them and nothing for a node's catalogue to sync. A node you stand up today works. It has nowhere
-to get clients from yet.
+Also not here, and all of it is published elsewhere. The **simulation SDKs** are on nuget.org, on
+the [Febris_SDK releases](https://github.com/Febris-XR/Febris_SDK/releases) page and through a
+vcpkg registry. The **Windows/PC suite** is on the
+[Febris_PC releases](https://github.com/Febris-XR/Febris_PC/releases) page and the **Android
+suite** on the [Febris_MobileSuite releases](https://github.com/Febris-XR/Febris_MobileSuite/releases)
+page, both at v0.2.0. None of them reaches a node's catalogue on its own. That takes a feed sync
+against a manifest you host, which [`SELF_HOSTING.md`](SELF_HOSTING.md) covers.
 
 ---
 
@@ -289,14 +289,14 @@ Pre-1.0, and honest about it.
   tests, 391 in the node slice of the shared-services suite, and 5 architecture tests. They ship
   in this repository -- [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test`
   commands.
-- **Known gaps**, stated rather than discovered. Package feed sync has no portal button and no
-  scheduler, so an operator invokes it by hand or from cron. Its tests fake the HTTP fetch and
+- **Known gaps**, stated rather than discovered. The feed-sync tests fake the HTTP fetch and
   exercise real storage and catalogues, so the path has not been run against a live public feed.
   `signerSha256` is carried in the feed format but not enforced. External SSO is scaffolding as
   described above.
-- **The Windows and mobile clients are separate repositories and are not yet published.** Until
-  they are, the node's client-distribution surface is exercisable but has nothing public to
-  distribute.
+- **The Windows and mobile clients live in separate repositories** and are published there at
+  v0.2.0. A node serves them only once an operator syncs a feed that lists them, so the
+  client-distribution surface is exercisable against real artifacts rather than only against
+  fixtures.
 
 ---
 
