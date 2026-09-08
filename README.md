@@ -160,15 +160,24 @@ your machine, but it is sitting in a file.
 Verify:
 
 ```sh
-curl -k https://febris.localhost:8443/health/ready   # {"status":"Healthy", ...}
-docker compose ps                                    # postgres, valkey, node-api, node-portal, proxy
+curl http://127.0.0.1:8081/health/ready   # {"status":"Healthy","totalDurationMs":7}
+docker compose ps                          # postgres, valkey, node-api, node-portal, proxy
 ```
 
-`/health/ready` reports each database independently, so a partial failure names the one that is
-down. `/health/live` answers as long as the process is up. Both are anonymous, for container and
-orchestrator probes. The bundled Caddy certificate is self-signed, which is why `curl` needs
-`-k` and your browser warns once -- see [`SELF_HOSTING.md`](SELF_HOSTING.md) for putting your own
-proxy in front.
+Probe the API on its own loopback port rather than through the proxy. Caddy answers 404 for
+`/health/*` deliberately, so dependency health is not readable by anyone who can reach the site.
+That refusal lives in `selfhost/Caddyfile` and is the reason this command does not use the 8443
+URL.
+
+`/health/live` answers as long as the process is up. `/health/ready` runs every dependency check
+and by default reports only the overall status and a duration. Set
+`HealthChecks:DetailedResponse=true` for the per-check array that names each database, cache and
+storage probe separately, which is what you want when something is wrong and not before. Both
+endpoints are anonymous, for container and orchestrator probes.
+
+The bundled Caddy certificate is self-signed, so your browser warns once, and any `curl` against
+the 8443 URL needs `-k` -- see [`SELF_HOSTING.md`](SELF_HOSTING.md) for putting your own proxy in
+front.
 
 [`SELF_HOSTING.md`](SELF_HOSTING.md) is the full operator story: what each container does, the
 environment variables, TLS, backups, upgrades, deploying the client suite through your node, and

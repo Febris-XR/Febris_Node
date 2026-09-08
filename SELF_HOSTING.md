@@ -313,10 +313,12 @@ docker run --rm -v febris-node_storage:/from -v "$PWD":/to alpine \
   tar czf /to/storage-$(date +%F).tar.gz -C /from .
 ```
 
-Compose prefixes volume names with the project name, which defaults to the directory you cloned
-into -- `febris-node_storage` assumes that is `febris-node`. If you cloned elsewhere, or set
-`COMPOSE_PROJECT_NAME`, run `docker volume ls` and use the name you actually have. Otherwise the
-archive comes out empty.
+Compose prefixes volume names with the project name, and `docker-compose.yml` pins that to
+`febris-node`, so `febris-node_storage` is right no matter what you called the directory you
+cloned into. If you deliberately override it with `COMPOSE_PROJECT_NAME` or `-p`, run
+`docker volume ls` and use the prefix you actually have. Getting it wrong fails quietly rather
+than loudly, because `docker run -v` creates a missing named volume instead of refusing, so the
+command succeeds and the archive comes out empty.
 
 Back up the `keys` volume too. The DataProtection key ring encrypts auth cookies and
 at-rest settings. Losing it logs everyone out and makes encrypted settings unreadable.
