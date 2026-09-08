@@ -13,9 +13,14 @@ client software to devices. It ships as a Docker Compose stack -- Postgres 16, V
 a web portal, and a Caddy reverse proxy -- and it comes up with no Febris account, no licence
 key, and no service the maintainer operates.
 
-The clone-and-run path in [Quickstart](#quickstart) has been executed end to end on a clean
-host: `generate-env.sh` -> `docker compose up` -> portal login -> `/health/ready` reporting
-`{"status":"Healthy"}` with all four databases checked.
+The clone-and-run path in [Quickstart](#quickstart) has been verified by reading the compose
+file, the scripts and the Caddyfile together, and by checking each command against the code it
+drives. It has **not** been executed end to end on a clean host. Nobody has watched
+`generate-env.sh` run, the stack come up and a first login succeed in one sitting.
+
+That is worth saying plainly rather than leaving you to discover it. If something in the
+quickstart does not behave as written, it is a defect and we want it reported. Open an issue with
+the command you ran and what came back.
 
 ---
 
@@ -205,8 +210,8 @@ Both sit on `Febris.UserNode.LogicLayer` (business logic) over
 `Febris.UserNode.DataAccessLayer` (EF Core), which owns four Postgres databases -- user, data,
 xAPI and analytics -- plus the artifact storage seam. Beneath that is the shared triad:
 `Febris.EnumLibrary`, `Febris.ModelLibrary` and `Febris.SharedServices`. `Febris.XApi.Models`,
-the netstandard2.0 xAPI contract, is vendored in-tree for this first cut and becomes a NuGet
-`PackageReference` once it is published separately.
+the netstandard2.0 xAPI contract, is a published NuGet package like the rest of the triad.
+Nothing shared is vendored as source in this repository.
 
 Valkey (Redis-protocol) is optional and the node adapts to its absence: configured, sessions use
 a server-side ticket store with an HTTPS-strict cookie. Not configured, the encrypted ticket
@@ -240,8 +245,13 @@ resolves the controllers' dependency graphs, the same resolutions the first inbo
 performs. "Works with no hub" is therefore a build gate rather than a promise. **A node with
 default configuration makes no outbound call to any Febris service.**
 
-Also not here: the Windows/PC client, the Android suite, and the simulation SDKs live in
-separate repositories that are not yet published.
+Also not here, and the distinction matters. The **simulation SDKs are published**, on nuget.org,
+on the [Febris_SDK releases](https://github.com/Febris-XR/Febris_SDK/releases) page and through a
+vcpkg registry, so anyone can build a simulation against them today. The **Windows/PC client and
+the Android suite are not**. They live in
+separate repositories that have not published a release yet, so there is no download link for
+them and nothing for a node's catalogue to sync. A node you stand up today works. It has nowhere
+to get clients from yet.
 
 ---
 

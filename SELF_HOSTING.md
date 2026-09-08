@@ -1,6 +1,6 @@
 ﻿# Self-hosting a Febris node
 
-This is the whole operator story: what you need, how to bring a node up, what it talks to
+This is the whole operator story. What you need, how to bring a node up, what it talks to
 (nothing external, by design), and how to deploy the client suite through it.
 
 If you only want it running, read [Quickstart](#quickstart). Everything after that is
@@ -61,7 +61,7 @@ it, because a full disk stops Postgres writing.
 
 | Port | Bound to | What it is |
 |---|---|---|
-| `${NODE_HTTPS_PORT}`, default 8443 | all interfaces | HTTPS, via the bundled Caddy. The portal and the API both sit behind it |
+| `${NODE_HTTPS_PORT}`, default 8443 | all interfaces | HTTPS, via the bundled Caddy. Two vhosts share it. The portal on `https://febris.localhost:${NODE_HTTPS_PORT}` and the API on `https://api.febris.localhost:${NODE_HTTPS_PORT}`. The API vhost is the one a device wants |
 | `${NODE_API_HTTP_PORT}`, default 8081 | `127.0.0.1` only, by default | the API's plain HTTP port. Health probes use it. Change `NODE_API_HTTP_BIND` to expose it, and understand why before you do |
 
 Nothing else is published. Postgres and Valkey are reachable only from the compose network, not
@@ -77,15 +77,29 @@ git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-
 docker compose up -d --build        # first build takes a few minutes
 ```
 
-Then open **https://febris.localhost:8443**.
+Then open **https://febris.localhost:8443**, from the machine running Docker.
+
+`febris.localhost` resolves to loopback, so it means "this machine" on whichever machine the
+browser is on. That matters because a headless Linux server is the host this guide recommends,
+and it has no browser. Two ways round it. Tunnel the port to a machine that does have one, with
+`ssh -L 8443:127.0.0.1:8443 you@server`, then open the same URL on your laptop. Or give the node
+a real hostname and follow [TLS](#tls-and-reverse-proxying), which is what a deployment you keep
+should do anyway.
+
+The API is on its own vhost at the same port, `https://api.febris.localhost:8443`. That is the
+URL a device wants, not the portal one.
 
 `generate-env.sh` prints your first-login credentials and stores them in `.env`. Log in with
 `NODE_ADMIN_EMAIL` / `NODE_ADMIN_PASSWORD` and **change the password immediately** -- it was
 generated on your machine, but it is sitting in a file.
 
-It refuses to run twice: if `.env` already exists it exits non-zero unless you pass `--force`,
-which rewrites the file and so rotates `POSTGRES_PASSWORD` and `NODE_JWT_SECRET` -- the ones an
-already-provisioned `pgdata` volume and every issued device token still depend on.
+It refuses to run twice. If `.env` already exists it exits non-zero unless you pass `--force`,
+which rewrites every generated value in it. That rotates `POSTGRES_PASSWORD` and
+`NODE_JWT_SECRET`, the ones an already-provisioned `pgdata` volume and every issued device token
+still depend on, and it rotates `NODE_ADMIN_PASSWORD` too. The new admin password is written to
+the file but **not applied to an account that already exists**, because the seed runs once and
+skips when the bootstrap admin is already there. So on a node that has been up, `--force` does
+not reset your login. It replaces the copy in the file with one that no longer opens anything.
 
 ### Verifying it came up
 
@@ -111,17 +125,20 @@ field is a complete readiness answer.
 **It does not tell you WHICH dependency failed, by default.** The per-check breakdown names every
 registered check, which tells an unauthenticated caller which databases this node owns and whether
 Redis and hub federation are configured -- an inventory of your deployment, on an endpoint that has
-to stay anonymous. Set `HealthChecks__DetailedResponse=true` in your `.env` when you need the
-breakdown to diagnose a partial failure, and prefer turning it off again afterwards.
+to stay anonymous. Turning the breakdown on is a `docker-compose.yml` edit, not a `.env` one. Compose reads `.env`
+only to substitute `${VAR}` inside the compose file, so a key that no service references reaches
+no container and setting it there does nothing at all. Add `HealthChecks__DetailedResponse: "true"`
+to the `&node-environment` block, `docker compose up -d`, and prefer taking it back out once you
+have your answer.
 
 **The probes are host-local, not public.** This used to say
 `curl -k https://febris.localhost:8443/health/ready`, through the bundled proxy. The proxy now
 returns 404 for `/health/*` on both vhosts, because the readiness body names every registered check
 and would let an unauthenticated caller enumerate which databases the node owns, whether Redis is
-configured and whether hub federation is on. That costs nothing operationally: the container
-healthchecks run inside the containers and the API publishes `127.0.0.1:8081` for exactly this. If
-you need the probes from elsewhere, put them behind your own authentication rather than reopening
-the path.
+configured and whether hub federation is on. That costs nothing operationally, because the
+container healthchecks run inside the containers and the API publishes `127.0.0.1:8081` for
+exactly this. If you need the probes from elsewhere, put them behind your own authentication
+rather than reopening the path.
 
 The TLS certificate is self-signed by the bundled Caddy proxy, which is why `curl` needs `-k`
 and your browser will warn once. For a real deployment see [TLS](#tls-and-reverse-proxying).
@@ -138,9 +155,15 @@ and your browser will warn once. For a real deployment see [TLS](#tls-and-revers
 | `node-portal` | built here | the web UI |
 | `proxy` | `caddy:2-alpine` | TLS termination and routing |
 
-State lives in named volumes: `pgdata`, `valkeydata`, `storage` (uploaded artifacts), `keys`
-(the DataProtection key ring), `caddydata`, `caddyconfig`. **Back those up.** `docker compose
-down` keeps them; `docker compose down -v` destroys them, including every uploaded package.
+State lives in six named volumes. They are `pgdata`, `valkeydata`, `storage` (uploaded
+artifacts), `keys` (the DataProtection key ring), `caddydata` and `caddyconfig`.
+
+`docker compose down` keeps all six. `docker compose down -v` destroys them, including every
+package your catalogue has synced.
+
+Three of the six carry state you would miss. `pgdata`, which a database dump reproduces, and
+`storage` and `keys`, which are archived directly. [Backups](#backups) covers all three, and says
+why the other three need nothing.
 
 ### Configuration
 
@@ -156,12 +179,31 @@ Everything is environment variables, read from `.env`. The ones you are likely t
 | `NODE_AUTO_PROVISION_JIT` | `false` | forwarded to the portal as `Identity__Registration__AutoProvisionJit`. `true` lets an unknown external-IdP user be provisioned an account on first login. Closed by default, and inert until you actually register an SSO provider |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SENDER` / `SMTP_PASSWORD` | placeholder | outbound mail. Nothing is sent until you set these |
 | `POSTGRES_PASSWORD`, `NODE_JWT_SECRET` | generated | rotate by editing `.env` and recreating the containers |
+| `ClientDownloads:BaseUrl` | `https://www.febr.is` | where the Software Repository pages send you when this node holds no copy of a package, which is the case on every fresh node. Consulted **only** when the catalogue is empty, so a package you sync always wins. Rendering the link is not a network call and the node requests nothing. **Blank it** on an air-gapped node to get the plain empty state instead |
 
-**On the bootstrap admin.** If `NODE_ADMIN_PASSWORD` is blank the account is created without a
-password and you set one through the forgot-password email flow -- which needs SMTP configured.
-That is deliberate: the project never stores a password you did not choose. If
-`NODE_ADMIN_EMAIL` is also blank, the node seeds a placeholder `admin@example.com` account with
-no password, which is inert until you configure one.
+**On the bootstrap admin.** Those two variables choose between three first-login paths, and the
+one you get by copying `.env.example` unedited is the third.
+
+- **Both set.** The account is created with that password on first boot. This is what
+  `generate-env.sh` does, so the quickstart above lands here.
+- **Email set, password blank.** The account is created with no password, and the only way in is
+  the forgot-password flow, which needs SMTP that a fresh node has not configured. On a node
+  without mail there is then no way to log in at all. Avoid this combination.
+- **Both blank, as `.env.example` ships.** No account is seeded. The node mints a one-time setup
+  token, prints it, and you claim the node at `/setup` within sixty minutes. No SMTP needed.
+
+If you wrote your own `.env` and left both blank, read the token off the container log:
+
+```sh
+docker compose logs node-portal | grep -A4 'FEBRIS NODE IS UNCLAIMED'
+```
+
+The token goes to stdout only and is deliberately never handed to the structured logger, so it
+does not appear in any log file you ship somewhere else.
+
+A password you set by hand must be at least 8 characters with an upper, a lower and a digit. A
+symbol is optional. One that fails the policy is **rejected** and the node boots with no admin
+account at all.
 
 ### Adding users
 
@@ -178,7 +220,7 @@ Both are gated on the admin/educator roles rather than on the registration polic
 self-registration does not close them.
 
 **These need SMTP.** An admin-created account is given a randomly generated password that is
-never shown to you and never sent to the user: the only way in is a link by email -- the
+never shown to you and never sent to the user. The only way in is a link by email, either the
 confirmation mail on single create, the forgot-password flow otherwise. Bulk create sends no
 mail at all, so those accounts are reachable only through forgot-password. With `SMTP_HOST`
 blank nothing is delivered, and you have made accounts nobody can ever log into. Configure SMTP
@@ -190,7 +232,7 @@ blank nothing is delivered, and you have made accounts nobody can ever log into.
 
 A node is not only an LMS -- it is the distribution point for the Febris client software. This
 is the supported path for getting the mobile suite onto devices, and for a single-headset owner
-it is the **only** path: the Companion app is served by a node, so an individual owner runs
+it is the **only** path, because the Companion app is served by a node. An individual owner runs
 their own node exactly as an organisation does.
 
 The whole operator side lives on the **portal**, behind the same signed-in cookie identity and
@@ -204,7 +246,6 @@ Who talks to what:
 | Surface | Auth | Purpose |
 |---|---|---|
 | Portal -> Software Repository pages | signed-in cookie, educator or admin | download, documentation, archive per platform |
-| Portal -> **Upload a package** (on each Archive page) | signed-in cookie, **admin only** | ingest a package you hold |
 | Portal -> **System -> Node -> Package Feed** | signed-in cookie, **admin only** | pull packages from a release feed |
 | `api/CompanionApp/GetLatestVersion` + `Download` | device token | the mobile Server fetches the Companion APK |
 | `api/Module/*` | device token | module catalogue + entitlement-gated module delivery |
@@ -212,28 +253,25 @@ Who talks to what:
 A device identity cannot put anything into the catalogue, since the writes are portal-only. An
 operator does not need a device identity to read it, because the portal serves the same store.
 
-### (a) Upload a package by hand
+**A feed sync is the only way a package gets into the catalogue.** There is no upload form. An
+earlier ingest route existed and was removed, so if you find a page or an older document offering
+you a file picker, it is out of date. Everything below follows from that, including the air-gapped
+case, which is handled by hosting the manifest yourself rather than by uploading by hand.
 
-Software Repository -> your platform -> **Archive** -> **Upload a package**. The form carries the
-`.zip` plus the catalogue metadata (name, version, kind, language), and an optional **UUID**
-field: supply an existing package's UUID (shown in the Archive table) to update that row and
-replace its stored bytes in place. Leave it empty to add a new version row. It lands through
-`IPackageIngestLogic`, the same ingest the feed sync uses. This is a first-class supported
-path, not a fallback. Use it for air-gapped installs, or when you build the clients yourself.
+A node whose catalogue is empty is not broken, and that is every node on its first boot. The
+Software Repository pages then link out to the project's own download page instead of showing a
+dead end. That is a rendered link and not a network call. The node requests nothing, and only your
+browser travels, and only if you click. Blank `ClientDownloads:BaseUrl` to switch it off and get
+the plain empty state, which is what an air-gapped site wants.
 
-What you upload is a plain `.zip`. There is no signature envelope and the node verifies no
-signature. Ingest re-reads the stored bytes and **records** their `sha256` so the catalogue can
-prove afterwards what it is serving -- but on this path there is nothing to compare it against,
-because no manifest declared an expected value. Checksum *refusal* is real, and it happens on
-the feed-sync path in (b).
-
-### (b) Pull from a release feed
+### (a) Pull from a release feed, the only way in
 
 **System -> Node -> Package Feed** on the portal. Point it at the manifest URL of whichever feed
 you trust (HTTPS only, and an air-gapped node can point at a manifest served on its own network),
 pick a channel, and run it. The form defaults to **dry run**, which is the recommended first
-pass: it produces the same per-package report and changes nothing. Untick it for the real
-thing. The report renders inline: ingested, already current, filtered, refused and failed, one
+pass, because it produces the same per-package report and changes nothing. Untick it for the real
+thing. The report renders inline, counting ingested, already current, filtered, refused and
+failed, one
 row per package with its reason.
 
 The sync is deliberately conservative:
@@ -242,7 +280,7 @@ The sync is deliberately conservative:
 - **oldest-first** -- versions are applied in order, so a catalogue cannot skip a release
 - **never-overwrite** -- an existing version is never silently replaced
 
-One honest limit: the feed format carries a `signerSha256` per payload -- the digest of the APK
+One honest limit. The feed format carries a `signerSha256` per payload, the digest of the APK
 signing certificate, the only field that speaks to *origin* rather than integrity -- but the node
 does not pin or enforce it. Only the artifact checksum is verified.
 
@@ -283,18 +321,28 @@ you asked for, if it is `obsolete`, or if it lists `consumers` that exclude `nod
 }
 ```
 
-`kind` and `kindId` are redundant on purpose: a disagreement is a fatal error for that entry,
+`kind` and `kindId` are redundant on purpose. A disagreement is a fatal error for that entry,
 not something the node resolves in favour of one side. `versionCode` is what the sync orders by.
 
-There is currently **no portal button and no scheduler** for this. You invoke it yourself, from
-a cron job or by hand. That is a real gap, not a design stance.
+**This also runs on a schedule.** A background service in the portal syncs on an interval, so the
+form above is for the first run and for when you do not want to wait. Three settings drive it, and
+like every other outbound destination it is off until you give it a URL.
 
-### (c) Devices pull from the catalogue
+| Setting | Default | Notes |
+|---|---|---|
+| `PackageFeed:Url` | blank | the manifest URL. Blank means the scheduler never runs |
+| `PackageFeed:Channel` | `stable` | entries on other channels are skipped |
+| `PackageFeed:IntervalHours` | `24` | anything under one hour is clamped up to one hour, with a warning |
+
+The scheduled run is never a dry run, so prove the URL with the form's dry run first, then set
+`PackageFeed:Url` once you are happy with the report.
+
+### (b) Devices pull from the catalogue
 
 Nothing further to configure. Point the mobile Server at your node's API URL and it reads
 `GetLatestVersion` / `Download` on its own schedule. The catalogue is the contract.
 
-### (d) Day-one scope: mobile only
+### (c) Day-one scope: mobile only
 
 The kinds that work end-to-end today are **`AndroidMobileServer` (200)** and
 **`AndroidMobileCompanion` (300)**.
@@ -302,6 +350,20 @@ The kinds that work end-to-end today are **`AndroidMobileServer` (200)** and
 `PC = 100`, `CSharp = 400` and `CPP = 500` are reserved values in the enum and in the manifest
 format, but there is no PC-through-node delivery flow -- the PC suite installs from a zip. The
 slots exist so the feed format does not need to change when that lands.
+
+### A one-time uninstall is coming for Android
+
+If you deploy the published **v0.2.0** Android builds to devices, read this before you do.
+
+Those builds are signed with a debug certificate. The first release-signed build, v0.2.1, carries
+a different one, and **Android refuses to update an app across a change of signing certificate**.
+The failure is `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, and there is no flag that works around it.
+Every device holding v0.2.0 has to uninstall before it can take v0.2.1, which loses that app's
+local data on the device.
+
+This happens once. Every build from v0.2.1 onward shares one certificate, so updates after it are
+ordinary updates. If you have a choice, wait for v0.2.1 rather than deploying v0.2.0 to a fleet
+you would then have to visit twice.
 
 ---
 
@@ -316,10 +378,23 @@ simulation (your code, using the Febris SDK)
     v
 Febris client  (PC Launcher / Statement Manager, or the Android Companion)
     |  authenticates with a node-issued hardware credential
-    |  POST /api/Token/authenticate   then   POST /api/Statement/Submit
+    |  1. POST /api/Token/authenticate        gets a bearer token
+    |  2. POST /api/Statement/StatementInitialization   opens the attempt for one
+    |     learner and one module, node answers with the initial statement
+    |  3. POST /api/Statement/Submit                     sends the rest
     v
 your node  (records stored, and they stop here)
 ```
+
+The middle leg is easy to miss and the whole thing depends on it. The client does not simply post
+a finished pile of statements. It names the learner and the module and asks the node to open the
+attempt, and the node answers with the initial statement the rest hang off. Both shipping clients
+do this, and a client that only ever called submit would produce records with nothing to attach
+to.
+
+There is also `POST /api/Statement/Backup`, which both clients keep as a permissive fallback. You
+do not configure it and it needs nothing from you. It is worth knowing the name exists if you go
+reading your own access logs.
 
 **The SDK does not talk to your node.** That is the surprise. It has no HTTP client and no endpoint
 setting, and there is nothing in it to point at a server. It builds statements and exposes them
@@ -332,15 +407,39 @@ the loop. If you were planning to post to the node directly from your own code, 
 and it is authenticated per device, but that is an integration you would be building yourself
 rather than a supported path.
 
+**Where the clients come from, today.** This is the honest answer and you should read it before
+you plan a deployment. The simulation SDKs are published and anyone can consume them. The clients
+that transmit are not. The Windows PC suite and the Android suite are built from repositories that
+have not published a release yet, so there is no download link to give you and nothing for your
+node's catalogue to sync. The one exception is the Android Companion, which reaches a headset from
+the Mobile Server over your own network rather than from us, once the Server itself is installed
+and the Companion package is in your catalogue.
+
+So a node you stand up today is a working node with nowhere to get clients from yet. Everything
+else in this guide works. Watch the
+[Febris_Node releases](https://github.com/Febris-XR/Febris_Node/releases) page for the client
+suites, and see [Support](#support-contributions-and-licence) if you need a date.
+
 ### What you configure, as the operator
 
 Very little, which is the point.
 
-1. **Register the device.** The portal has a Hardware section and a Registration Settings section.
-   A client registers against your node and the node mints the credential it will use from then on.
-   The credential belongs to the node that issued it.
-2. **Point the client at your node.** The client needs your node's URL. Everything after that is
-   the credential exchange above.
+1. **Register the device yourself, before the device is ever pointed here.** There is no
+   self-enrolment. A device cannot introduce itself to your node, and the node has no route that
+   would let it. You create the record in the portal, under **Hardware -> Create**, and the node
+   mints that device's credential at that moment.
+
+   > **The credential is displayed once and never again.** It is stored as a hash, so nothing can
+   > recover it later, not even you. Copy it when it appears. If it is lost, the only way back is
+   > **Regenerate Credential** on that device, which invalidates the old one immediately and stops
+   > the device authenticating until you enter the new one.
+
+   Registration Settings is a different thing entirely, covered under
+   [Adding users](#adding-users). It governs how *people* get accounts, not devices.
+
+2. **Point the client at your node.** The client needs your node's API URL, which is
+   `https://api.febris.localhost:8443` on the bundled recipe and your own API hostname on a real
+   deployment, plus the credential from step 1. Everything after that is the exchange above.
 3. **Nothing about xAPI itself.** There is no LRS endpoint to configure, no shared secret to
    distribute and no per-simulation setup on the node.
 
@@ -369,7 +468,10 @@ that repository's release workflow, which a checksum fetched from the same page 
 is present from v0.1.1 onward, and releases before it carry checksums only.
 
 The two SDKs are held byte-identical at the same minor version by a conformance gate that runs
-before either is published, so a C++ simulation and a C# one produce the same records.
+before the **C++** bundle is published, so a C++ simulation and a C# one produce the same records.
+The C# package's own workflow does not run that gate, so parity is proven at each C++ release
+rather than at every publish of either. In practice the two ship together and this has not bitten
+anyone, but it is an asymmetry rather than a guarantee and you should know which one you have.
 
 ---
 
@@ -431,7 +533,7 @@ DNS. For anything real, use your own reverse proxy and terminate there.
 
 ### If you already run a reverse proxy
 
-This is the common case, and until 2026-08-25 the recipe did not actually support it: the portal
+This is the common case, and until 2026-08-25 the recipe did not actually support it. The portal
 published no host port at all, so there was nothing for your proxy to point at and the only option
 was running the bundled Caddy as a second proxy behind your first one.
 
@@ -447,7 +549,7 @@ already on `127.0.0.1:8081`. Point your proxy at those two, as two hostnames -- 
 not supported, because nothing in the app rewrites generated URLs for a path prefix.
 
 **Set `COMPOSE_FILE` rather than passing `-f`.** The upgrade command below is a bare
-`docker compose up -d --build`, which converges to the base file alone: it would restart the
+`docker compose up -d --build`, which converges to the base file alone. It would restart the
 bundled proxy and drop the portal port without saying anything.
 
 The overlay's header is the full contract your proxy has to satisfy. The five that bite hardest:
@@ -495,11 +597,24 @@ undo it here.
 
 ## Backups
 
+Pick somewhere to write them that is **not** the clone. Nothing under the clone is covered by
+`.gitignore`, so backups written into it turn up in `git status`, and an upgrade that re-clones
+or a stray `git clean` takes them with it.
+
 ```sh
-docker compose exec postgres pg_dumpall -U febris > febris-$(date +%F).sql
-docker run --rm -v febris-node_storage:/from -v "$PWD":/to alpine \
+export BACKUP_DIR=/var/backups/febris-node
+mkdir -p "$BACKUP_DIR"
+```
+
+```sh
+docker compose exec -T postgres pg_dumpall -U febris > "$BACKUP_DIR"/febris-$(date +%F).sql
+docker run --rm -v febris-node_storage:/from -v "$BACKUP_DIR":/to alpine \
   tar czf /to/storage-$(date +%F).tar.gz -C /from .
 ```
+
+**`-T` on the dump is not optional.** Without it `docker compose exec` allocates a pseudo-TTY
+whenever your stdin is a terminal, which is every time you run this by hand, and the SQL comes
+back with carriage returns embedded in it. The file looks perfectly normal and fails on replay.
 
 Compose prefixes volume names with the project name, and `docker-compose.yml` pins that to
 `febris-node`, so `febris-node_storage` is right no matter what you called the directory you
@@ -512,9 +627,29 @@ Back up the `keys` volume too. The DataProtection key ring encrypts auth cookies
 at-rest settings. Losing it logs everyone out and makes encrypted settings unreadable.
 
 ```sh
-docker run --rm -v febris-node_keys:/from -v "$PWD":/to alpine \
+docker run --rm -v febris-node_keys:/from -v "$BACKUP_DIR":/to alpine \
   tar czf /to/keys-$(date +%F).tar.gz -C /from .
 ```
+
+**And back up `.env`.** It is the smallest file here and the only one you cannot regenerate.
+It holds `POSTGRES_PASSWORD`, which is the password the `pgdata` volume was initialised with and
+the only one that will ever open it, and `NODE_JWT_SECRET`. Without it, a dump and a pile of
+volume tarballs will not come up on a replacement host, because nothing in them records what the
+database password was.
+
+```sh
+cp .env "$BACKUP_DIR"/env-$(date +%F).bak
+chmod 600 "$BACKUP_DIR"/env-$(date +%F).bak
+```
+
+That copy is secrets in the clear. Keep it wherever you keep secrets, which for most people is
+not the same place as the tarballs.
+
+**Four artifacts, then.** The dump, `storage`, `keys` and `.env`. The other three volumes need
+nothing from you. `pgdata` is what the dump reproduces. `valkeydata` holds sessions only, so
+losing it signs everyone out and costs nothing else. `caddyconfig` is regenerated on boot, and
+`caddydata` holds the self-signed CA, so keeping it saves your browsers one certificate warning
+after a rebuild and nothing more.
 
 **Run the dump from inside the container, as above.** `pg_dumpall` refuses to work against a server
 newer than itself, and it aborts rather than producing a partial file:
@@ -537,6 +672,25 @@ before you need it, using the drill at the end of the next section.
 
 **Read this before you need it.** Restoring is not the reverse of `up -d` and there is no undo.
 
+Two different situations send people here, and they start in different places.
+
+**Rolling a running node back to an earlier state.** Start at step 1 below. The stack is already
+there and you are replacing what is inside it.
+
+**Rebuilding on a host that is gone.** Do this first, then join at step 2.
+
+```sh
+git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-node
+cp /path/to/your/env-2026-08-18.bak .env      # the ORIGINAL .env, not a fresh generate-env.sh
+chmod 600 .env
+docker compose up -d --build
+docker compose stop node-api node-portal
+```
+
+> Do **not** run `generate-env.sh` on this path. It writes a new `POSTGRES_PASSWORD`, and the
+> restored `pgdata` only ever answers to the original one. This is the single reason `.env` is in
+> the backup set, and the reason a backup without it is not a backup.
+
 ### 1. Stop the applications, leave the database running
 
 ```sh
@@ -548,17 +702,21 @@ database that disagrees with what the application already has in memory.
 
 ### 2. Restore the databases
 
-`pg_dumpall` writes a plain SQL script containing `CREATE DATABASE` and `\connect`, so it is replayed
-with `psql`, **not** `pg_restore`. (`pg_restore` is for archives produced by `pg_dump -Fc`. Using the
-wrong one is the most common way this goes wrong at three in the morning.)
+`pg_dumpall` writes a plain SQL script containing `CREATE DATABASE` and `\connect`, so it is
+replayed with `psql`, **not** `pg_restore`. (`pg_restore` is for archives produced by
+`pg_dump -Fc`. Using the wrong one is the most common way this goes wrong at three in the
+morning.)
 
-```sh
-docker compose exec -T postgres psql -U febris -d postgres < febris-2026-08-18.sql
-```
+**Read the whole step before running any of it.** The order below is the order to use, and the
+drop comes before the replay.
 
-The dump recreates each database. If a database of the same name already exists the script errors on
-that object and carries on, which leaves a half-old, half-new mixture. To restore onto a system that
-already has data, drop the four databases first and mean it:
+> Dropping destroys current data irreversibly. Take a fresh dump of the CURRENT state first, even
+> if you believe it is broken. A dump of a broken system is still evidence, and it is the only way
+> back if the backup you are restoring turns out to be worse.
+
+If the four databases already exist, which is the case on any node that has booted, drop them
+first and mean it. The dump recreates each one, and replaying over an existing database errors on
+each object and carries on, leaving a half-old, half-new mixture that looks like it worked.
 
 ```sh
 docker compose exec postgres psql -U febris -d postgres \
@@ -568,23 +726,30 @@ docker compose exec postgres psql -U febris -d postgres \
   -c 'DROP DATABASE IF EXISTS febris_analytics'
 ```
 
-Those four names are what `docker-compose.yml` configures. A node someone has customised, or a
-development checkout, may use different ones -- check the `ConnectionStrings__*` values in your
-compose file rather than trusting this list, and `\l` in psql shows what is actually there.
+Then replay:
 
-> This destroys current data irreversibly. Take a fresh dump of the CURRENT state first, even if you
-> believe it is broken. A dump of a broken system is still evidence, and it is the only way back if
-> the backup you are restoring turns out to be worse.
+```sh
+docker compose exec -T postgres psql -U febris -d postgres < "$BACKUP_DIR"/febris-2026-08-18.sql
+```
+
+Those four names are what `docker-compose.yml` configures. A node someone has customised, or a
+development checkout, may use different ones. Check the `ConnectionStrings__*` values in your
+compose file rather than trusting this list, and `\l` in psql shows what is actually there.
 
 ### 3. Restore the volumes
 
 The databases are only part of the node. `storage` holds uploaded video and files, and `keys` holds
 the DataProtection key ring.
 
+> **Archive the current volumes first.** The commands below begin with `rm -rf`, and this is the
+> one step in the whole procedure with nothing behind it. Run the two `tar czf` commands from
+> [Backups](#backups) under different file names before you run these, even if you are certain the
+> current contents are worthless. A dump protects the databases. Nothing protects these.
+
 ```sh
-docker run --rm -v febris-node_storage:/to -v "$PWD":/from alpine \
+docker run --rm -v febris-node_storage:/to -v "$BACKUP_DIR":/from alpine \
   sh -c 'rm -rf /to/* && tar xzf /from/storage-2026-08-18.tar.gz -C /to'
-docker run --rm -v febris-node_keys:/to -v "$PWD":/from alpine \
+docker run --rm -v febris-node_keys:/to -v "$BACKUP_DIR":/from alpine \
   sh -c 'rm -rf /to/* && tar xzf /from/keys-2026-08-18.tar.gz -C /to'
 ```
 
@@ -599,6 +764,12 @@ docker compose up -d
 ./selfhost/smoke.sh
 ```
 
+If you run the byo-proxy overlay rather than the bundled Caddy, set `COMPOSE_FILE` first, or that
+bare `docker compose up -d` quietly puts you back on the bundled recipe and starts a proxy you did
+not want on a port you may not have free. See
+[If you already run a reverse proxy](#if-you-already-run-a-reverse-proxy). The same applies to
+`smoke.sh`, which probes the bundled shape.
+
 `smoke.sh` asserts every service is running, that liveness and readiness both answer, that the
 portal responds through the proxy, and that the proxy is still refusing `/health/*` from outside.
 It exits non-zero if any of those fail, so it works as the last line of a restore script or a cron
@@ -610,19 +781,36 @@ a stale schema shows up here rather than as a runtime error later.
 
 Two things it does not tell you. **Analytics has no schema check** -- it is provisioned with
 `EnsureCreated` rather than migrations, so nothing verifies its shape. And a green probe says nothing
-about the ROWS: it proves the tables exist, not that your data came back. Log in and open one screen
+about the ROWS. It proves the tables exist, not that your data came back. Log in and open one
+screen
 carrying real content before you call the restore done.
 
-### 5. Prove it on a scratch database first
+### 5. Rehearse it, in a cluster of its own
 
-Never rehearse on the live node. This drill touches nothing real:
+A backup you have never restored is a hypothesis. Rehearse it somewhere that cannot hurt you.
+
+**Not in a scratch database on the live node.** That does not work and it is worse than not
+working. `pg_dumpall` writes a cluster-wide script full of `\connect febris_user` lines, and `psql`
+obeys them. Pointing it at a scratch database only decides where the first few statements land.
+The moment it reaches the first `\connect` it jumps to your real database and replays into it.
+
+Use a throwaway cluster instead, so those `\connect` lines have nowhere real to go:
 
 ```sh
-docker compose exec postgres psql -U febris -d postgres -c 'CREATE DATABASE restore_drill'
-docker compose exec -T postgres psql -U febris -d restore_drill < febris-2026-08-18.sql
-docker compose exec postgres psql -U febris -d restore_drill -c '\dt'
-docker compose exec postgres psql -U febris -d postgres -c 'DROP DATABASE restore_drill'
+docker run --rm -d --name pg-drill -e POSTGRES_USER=febris -e POSTGRES_PASSWORD=drill postgres:16-alpine
+until docker exec pg-drill pg_isready -U febris -q; do sleep 1; done
+
+docker exec -i pg-drill psql -U febris -d postgres < "$BACKUP_DIR"/febris-2026-08-18.sql
+docker exec pg-drill psql -U febris -d febris_data -c '\dt'
+docker rm -f pg-drill
 ```
+
+It is a separate container on no network of yours, and `docker rm -f` at the end takes the whole
+thing with it. Nothing it does can reach the node.
+
+Expect one complaint near the top, `role "febris" already exists`. That is correct and harmless.
+The drill container created that role at startup and the dump tries to create it again. Any other
+error is a real finding.
 
 If the dump replays cleanly and the tables are there, the backup is real. If it does not, you have
 found that out on a day when it costs nothing.
@@ -717,7 +905,8 @@ changed password against an existing `pgdata` volume fails exactly this way.
 password policy (>= 8 characters with an upper, a lower and a digit, a symbol optional), the
 seed logs the rejection and creates *no* account -- the node still comes up and still reports
 `/health/ready` Healthy, so nothing else looks wrong. Confirm with
-`docker compose logs node-portal | grep 'failed creating SuperAdmin'`, which prints Identity's
+`docker compose logs node-portal | grep -i 'failed creating bootstrap admin'`, which prints
+Identity's
 own reason. Then fix the password in `.env` and `docker compose up -d node-portal` to re-run the
 seed. If `NODE_ADMIN_PASSWORD` was blank the account has no password by design -- use the
 forgot-password flow, which needs SMTP.
