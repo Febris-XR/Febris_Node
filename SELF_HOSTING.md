@@ -258,6 +258,57 @@ slots exist so the feed format does not need to change when that lands.
 
 ---
 
+## Outbound connections this node makes
+
+A default node contacts **nothing**. Every outbound destination below is opened by a setting you
+choose, and each ships blank or off. That is worth knowing precisely rather than approximately if
+you are deploying somewhere restricted or air-gapped.
+
+**1. Your mail server, once you configure one.** `EmailSender:*`. Used for password resets, user
+invites and account activation. With no mail configured those features do not work and there is no
+other route to recover an account, so a node without SMTP effectively has no password reset. Plan
+for that before you need it.
+
+If your egress blocks OCSP or CRL lookups, leave `EmailSender:CheckCertificateRevocation` at its
+default of `false`. Turning it on makes an unreachable revocation responder reject an otherwise
+valid certificate, and **all** mail then fails with "the remote certificate was rejected" even
+though the chain and host name are fine. Both are still validated either way.
+
+**2. The client artifact feed, once you point at one.** `PackageFeed:Url`, blank by default, which
+leaves the sync idle and the client catalogue empty. The manifest is a static JSON document, so you
+may host your own copy and point at that instead. There is no distribution service to call.
+
+**3. A hub, only if you enable federation.** Off by default, see below. When enabled the only thing
+that leaves this node is a `GET` to the configured Data API base, issued by the readiness health
+check to see whether the hub is reachable. No node data is sent with it.
+
+Nothing else phones home. There is no telemetry, no update check and no licence call. A geocoding
+lookup used to sit on the Location save path and is gone as of this release, so an air-gapped node
+no longer needs an exception for it.
+
+---
+
+## Hub federation
+
+**Off by default, and a node with it off is complete rather than degraded.** The readiness probe
+reports the closed gate as `Healthy`, not `Degraded`, on purpose.
+
+Three independent things hold it shut on a fresh install. The setting defaults to false in code,
+neither `appsettings.json` carries a `HubFederation` section, and `docker-compose.yml` blanks
+`LicenseKey` and both `ApiUrlPath__*` values explicitly. A node reads its own database and is its
+own source of truth.
+
+**Learner data has no route upward, structurally.** Statements, actors, earned credentials and
+accounts never leave the node. The only outbound request the federation path can make is the
+reachability `GET` described above. If you are evaluating this against a records-privacy
+obligation, that is the property to check, and it holds with federation on as well as off.
+
+Federation exists for Febris-operated deployments that run a central hub. There is no public hub to
+point a self-hosted node at, so for a third-party deployment the switch has nothing to connect to.
+It is documented here so its absence reads as a decision rather than a gap.
+
+---
+
 ## TLS and reverse proxying
 
 The bundled Caddy terminates TLS with a self-signed certificate so the quickstart works with no
@@ -313,6 +364,17 @@ The `Transport` section also controls HSTS, CORS and `X-Frame-Options`:
 with a leading dot (`.example.com`) matches the domain and its subdomains. Without one it is an
 exact host match. Set `Preload` only once you have actually submitted to the HSTS preload list --
 it is close to irreversible.
+
+### Leave `IpRateLimiting:RealIpHeader` empty
+
+It ships empty deliberately and should stay that way. It names an HTTP header the rate-limit
+library reads to choose a bucket, and that library does **not** check whether the header came from
+a proxy you trust. With it set, a caller can send a different value on every request and never be
+limited. Measured at eight login attempts with a rotating `X-Real-IP`, none of them limited.
+
+Left empty, the limiter uses the resolved `RemoteIpAddress` instead, which respects the
+`KnownNetworks` trust decision above. That is the whole reason the trust decision exists, so do not
+undo it here.
 
 ---
 
@@ -485,6 +547,44 @@ If it **did** add one, the schema is ahead of the code you just deployed and you
 the pre-upgrade database dump using the section above. Do not try to hand-drop the new columns:
 `__EFMigrationsHistory` still names the migration, so the node will believe it is applied and will
 not recreate it.
+
+---
+
+## Running without Docker
+
+Supported on a best-effort basis. The compose stack is what gets tested, and this path is not
+covered by the smoke script, so treat the steps below as a starting point rather than a warranty.
+The images do nothing exotic, and the equivalent by hand is:
+
+1. Provide Postgres 16 or newer and any Redis-protocol server, Valkey recommended. Pick a storage
+   directory and a DataProtection key directory.
+2. `dotnet publish -c Release` both `enduser/FebrisEndUserApi` and `enduser/FebrisEndUserPortal`.
+3. Export the same environment the compose file sets on the `node-*` services. Connection strings,
+   `RedisConnectionStrings__*`, `Storage__*`, `SmbClient__Path`, `AppKeys__KeyRingPath`,
+   `JwtSettings__Secret`, `NodeBootstrap__*`, and blank `LicenseKey` and `ApiUrlPath__*`. Include
+   `Serilog__*` as well. The file sink's size and retention bounds exist only in the compose
+   environment, so without them a bare-metal host writes an unbounded log.
+4. Start the **API first and let it finish**, then the Portal. Both hosts provision and migrate the
+   databases on boot, and compose deliberately serialises that by making `node-portal` wait for
+   `node-api` to report healthy, so the two never run migrations against the same databases at
+   once. Nothing enforces that ordering for you here.
+5. Run the published assemblies, `dotnet Febris.UserNode.Api.dll` and
+   `dotnet Febris.UserNode.Portal.dll`. Neither csproj sets `<AssemblyName>`, so those are the
+   names `dotnet publish` produces. The Dockerfile entrypoints carry the same ones.
+6. Front the portal with an HTTPS-terminating proxy, which login requires, forwarding
+   `X-Forwarded-*`, and declare that proxy to the application with
+   `ForwardedHeaders__KnownNetworks__0` or `KnownProxies` as
+   [If you already run a reverse proxy](#if-you-already-run-a-reverse-proxy) describes.
+7. Block `/health/*` at that proxy if the node is publicly reachable. Both hosts map the probes
+   anonymously, because an orchestrator probe cannot authenticate, and `selfhost/Caddyfile` shows
+   the shape. The readiness body is terse by default, so this is defence in depth rather than the
+   only control. Set `HealthChecks:DetailedResponse` to `true` to get per-check detail back on a
+   private network.
+
+> **Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`.** It registers a second forwarded-headers
+> middleware ahead of everything else, and that one trusts ANY peer, which defeats the
+> `KnownNetworks` allowlist you just declared and re-opens a rate-limit bypass. It was removed from
+> `docker-compose.yml` for exactly this reason. Declare your proxy explicitly instead.
 
 ---
 
