@@ -600,9 +600,9 @@ undo it here.
 
 ## Backups
 
-Pick somewhere to write them that is **not** the clone. Nothing under the clone is covered by
-`.gitignore`, so backups written into it turn up in `git status`, and an upgrade that re-clones
-or a stray `git clean` takes them with it.
+Pick somewhere to write them that is **not** the clone. No `.gitignore` rule covers a dump, a
+volume tarball or a copy of `.env` under another name, so backups written into the clone turn up
+in `git status`, and an upgrade that re-clones or a stray `git clean` takes them with it.
 
 ```sh
 export BACKUP_DIR=/var/backups/febris-node
