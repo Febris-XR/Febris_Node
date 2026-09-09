@@ -287,8 +287,9 @@ Pre-1.0, and honest about it.
 - **No long-term-support branch.** Fixes land on the default branch. Upgrades run migrations at
   startup. Take a database backup first, because there is no downgrade path yet.
 - **Interfaces may change** before 1.0, including configuration keys and API routes.
-- **Test suites are green** and are the honest measure of what is pinned. 298 node
-  business-logic tests and 90 architecture guards, both shipping in this repository, and
+- **Test suites are green** and are the honest measure of what is pinned. Measured by running
+  them on 2026-09-09, the business-logic suite is 879 tests with 21 skipped, and the
+  architecture suite is 115 with 1 skipped. Both ship in this repository and
   `.github/workflows/build.yml` runs exactly those two.
   [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test` commands. The
   shared-services suite left with the shared kernel on 2026-08-28 and is not here.
