@@ -7,14 +7,16 @@ namespace Febris.UserNode.Portal
     /// Where the portal sends an operator when this node holds no local copy of a client package
     /// (bound from the "<see cref="SectionName"/>" appsettings section).
     ///
-    /// The problem this solves: a node's software catalogue starts empty and only fills when an
-    /// operator uploads a package by hand or runs a feed sync. Nothing forces a stranger running
-    /// their own node to do either, so the Software Repository pages were a dead end on every
-    /// fresh deployment. Rather than requiring every operator to mirror the binaries, the portal
-    /// links out to the project's own download page for anything it does not hold locally.
+    /// The problem this solves. A node's software catalogue starts empty and fills only through a
+    /// feed sync, the manual upload path having been removed on 2026-08-31. Nothing forces a
+    /// stranger running their own node to run one, so the Software Repository pages were a dead
+    /// end on every fresh deployment. Rather than requiring every operator to mirror the
+    /// binaries, the portal links out to the project's own download page for anything it does
+    /// not hold locally.
     ///
     /// This never overrides a local package. Resolution order is always local first, link second,
-    /// so an operator who uploads their own build keeps serving it, and an air-gapped site that
+    /// so an operator whose feed sync has brought a build in keeps serving it, and an air-gapped
+    /// site that
     /// blanks <see cref="BaseUrl"/> behaves exactly as it did before this existed.
     ///
     /// IMPORTANT: rendering a link is NOT a network call. The node makes no outbound request to

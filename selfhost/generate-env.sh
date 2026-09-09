@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Febris Node -- write a ready-to-run .env for the clone-and-run compose stack.
 # Idempotent-safe: refuses to overwrite an existing .env unless called with --force,
 # so re-running can never silently rotate the secrets a provisioned stack already

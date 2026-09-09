@@ -1,5 +1,12 @@
 # Node configuration reference
 
+
+> **Paths in this document are relative to the repository root.** The exception is anything
+> beginning `Febris_Shared/`, which lives in the sibling repository
+> [Febris-XR/Febris_Shared](https://github.com/Febris-XR/Febris_Shared) and reaches this node as
+> the `Febris.EnumLibrary`, `Febris.ModelLibrary` and `Febris.SharedServices` NuGet packages
+> rather than as source. Those files are not in this checkout, which is why they are marked.
+
 **Generated 2026-08-23 from a read-side census of both node hosts, then corrected by hand for the
 changes made the same day.** ROADMAP 18. This is THE one artefact for "what do I set": the
 committed `appsettings.json` files are the defaults and the deploy template, `docker-compose.yml`
@@ -78,11 +85,11 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `JwtSettings:ExpiryTimeInSeconds` | both | LIVE | committed-default | 15 minutes (JwtLifetimeSettings.cs). Absent, blank, unparseable or <= 0 all fall back to 15 mi... | `shared/FebrisSharedServices/JwtLifetimeSettings.cs` |
+| `JwtSettings:ExpiryTimeInSeconds` | both | LIVE | committed-default | 15 minutes (JwtLifetimeSettings.cs). Absent, blank, unparseable or <= 0 all fall back to 15 mi... | `Febris_Shared/shared/FebrisSharedServices/JwtLifetimeSettings.cs` |
 | `JwtSettings:KeyId` | Api | LIVE | deploy-topology | Derived deterministically: first 16 chars of base64url(SHA-256(modulus \|\| exponent)) (Derive... | `JwtSigningKeyProvider.cs` |
 | `JwtSettings:PrivateKey` | Api | LIVE | deploy-secret | Non-Development: no RSA key, HasAsymmetricKey=false, the API signs and validates HMAC only (J... | `JwtSigningKeyProvider.cs` |
 | `JwtSettings:RefreshTokenHours` | Api | LIVE | committed-default | 8 hours (JwtLifetimeSettings.cs). blank/unparseable/<=0 fall back to 8 hours. | `JwtLifetimeSettings.cs` |
-| `JwtSettings:Secret` | Api | LIVE | deploy-secret | Throws InvalidOperationException 'JWT signing secret is not configured' (JwtSigningKeyProvider... | `shared/FebrisSharedServices/JwtSigningKeyProvider.cs` |
+| `JwtSettings:Secret` | Api | LIVE | deploy-secret | Throws InvalidOperationException 'JWT signing secret is not configured' (JwtSigningKeyProvider... | `Febris_Shared/shared/FebrisSharedServices/JwtSigningKeyProvider.cs` |
 
 - **`JwtSettings:ExpiryTimeInSeconds`**: Committed '900' in the API template (= the default). Portal template has no JwtSettings section so the Portal uses the 15-minute default unless the key is supplied. if an operator lengthens it on the API they must set it on the Portal too or the regeneration revocation window will be shorter than the live access token. Not set by compose.
 - **`JwtSettings:KeyId`**: Optional. Not in any template, not set by compose. Only matters for key rotation with RS256.
@@ -118,7 +125,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `NodeBootstrap:AdminEmail` | Portal | LIVE | deploy-topology | "admin@example.com" (NodeBootstrapAdminOptions.cs). Release build with default email AND no pa... | `Data/NodeBootstrapAdminOptions.cs` |
+| `NodeBootstrap:AdminEmail` | Portal | LIVE | deploy-topology | "admin@example.com" (NodeBootstrapAdminOptions.cs). Release build with default email AND no pa... | `enduser/FebrisEndUserPortal/Data/NodeBootstrapAdminOptions.cs` |
 | `NodeBootstrap:AdminPassword` | Portal | LIVE | deploy-secret | null: Release creates a password-less account ONLY if AdminEmail was configured (Forgot Passwo... | `NodeBootstrapAdminOptions.cs` |
 
 - **`NodeBootstrap:AdminEmail`**: NOT in any template. compose NodeBootstrap__AdminEmail from NODE_ADMIN_EMAIL (docker-compose.yml). Changing the email on a seeded node seeds a second admin (comment :192-196).
@@ -131,7 +138,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 | `EmailSender:* (API host copy)` | Api | INERT-NO-READER | residue | n/a, nothing reads it | `No reader: nothing under enduser/FebrisEndUserApi reference...` |
 | `EmailSender:CheckCertificateRevocation` | Portal | LIVE | committed-default | false (preserves MailKit 2.x behaviour) | `EmailService.cs` |
 | `EmailSender:EnableSSL` | Portal | LIVE | committed-default | false | `EmailService.cs` |
-| `EmailSender:Host` | Portal | LIVE | deploy-topology | null Host. SendEmail fails and is logged (password reset / invite mail silently not delivered) | `shared/FebrisSharedServices/EmailService.cs` |
+| `EmailSender:Host` | Portal | LIVE | deploy-topology | null Host. SendEmail fails and is logged (password reset / invite mail silently not delivered) | `Febris_Shared/shared/FebrisSharedServices/EmailService.cs` |
 | `EmailSender:Password` | Portal | LIVE | deploy-secret | null | `EmailService.cs` |
 | `EmailSender:Port` | Portal | LIVE | deploy-topology | 0 (GetValue<int>) | `EmailService.cs` |
 | `EmailSender:Sender` | Portal | LIVE | deploy-topology | null | `EmailService.cs` |
@@ -150,7 +157,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
 | `Storage:BasePath` | both | LIVE | deploy-topology | Falls back to SmbClient:Path. If both are blank: registration still succeeds (lazy factory, Fe... | `FebrisStorageRegistration.cs` |
-| `Storage:Provider` | both | LIVE | deploy-topology | FileSystem (StorageOptions default, shared/FebrisSharedServices/Storage/IStorageProvider.cs. e... | `shared/FebrisSharedServices/Storage/FebrisStorageRegistration.cs` |
+| `Storage:Provider` | both | LIVE | deploy-topology | FileSystem (StorageOptions default, shared/FebrisSharedServices/Storage/IStorageProvider.cs. e... | `Febris_Shared/shared/FebrisSharedServices/Storage/FebrisStorageRegistration.cs` |
 | `Storage:S3Bucket (also Storage:S3Endpoint, Storage:S3Region)` | both | LIVE | deploy-topology | S3Bucket blank -> InvalidOperationException 'Storage:S3Bucket is required for the S3 provider'... | `FebrisStorageRegistration.cs` |
 
 - **`Storage:BasePath`**: Not in either template. compose sets /data/storage on a named volume for both hosts (docker-compose.yml). Ignored when Provider=S3.
@@ -161,7 +168,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `SmbClient:Path` | both | LIVE | deploy-topology | null. BaseFileSystemPath=null so every derived path becomes RELATIVE (e.g. 'media/video/...') ... | `shared/FebrisSharedServices/FileServerHandler.cs` |
+| `SmbClient:Path` | both | LIVE | deploy-topology | null. BaseFileSystemPath=null so every derived path becomes RELATIVE (e.g. 'media/video/...') ... | `Febris_Shared/shared/FebrisSharedServices/FileServerHandler.cs` |
 
 - **`SmbClient:Path`**: Committed '{SmbClientPath}' placeholder in both templates. unsubstituted it creates literal '{SmbClientPath}...' directories under the CWD (present in the checkout: enduser/FebrisEndUserPortal/{SmbClientPath}*). Compose sets '/data/storage/' (docker-compose.yml). the TRAILING SLASH is load-bearing because every derived path is string concatenation. Should equal Storage:BasePath until the Phase 3 cutover retires the static path layer.
 
@@ -169,7 +176,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `FileSystem:UniqueFileSystemPath` | both | LIVE | deploy-topology | null -> SpecificFileSystemPath == SmbClient:Path, i.e. the tenant subtree collapses onto the s... | `shared/FebrisSharedServices/FileServerHandler.cs` |
+| `FileSystem:UniqueFileSystemPath` | both | LIVE | deploy-topology | null -> SpecificFileSystemPath == SmbClient:Path, i.e. the tenant subtree collapses onto the s... | `Febris_Shared/shared/FebrisSharedServices/FileServerHandler.cs` |
 
 - **`FileSystem:UniqueFileSystemPath`**: Committed '{UniqueFileSystemPath}\\' in both templates. NOT flagged by ConfigurationPlaceholderValidator because IsUnsubstitutedTemplate requires the value to END with '}' (JwtSigningKeyProvider.cs IsUnsubstitutedTemplate, trailing backslash defeats it), so an unsubstituted Release deployment silently creates '{SmbClientPath}{UniqueFileSystemPath}' directories. Compose sets 'node/' (docker-compose.yml). trailing separator is load-bearing (concatenation).
 
@@ -195,7 +202,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `ForwardedHeaders:Enabled` | both | LIVE | env-only | true. with the whole section absent the middleware runs with XForwardedFor\|XForwardedProto an... | `shared/FebrisSharedServices/ForwardedHeadersConfiguration.cs` |
+| `ForwardedHeaders:Enabled` | both | LIVE | env-only | true. with the whole section absent the middleware runs with XForwardedFor\|XForwardedProto an... | `Febris_Shared/shared/FebrisSharedServices/ForwardedHeadersConfiguration.cs` |
 | `ForwardedHeaders:ForwardLimit` | both | LIVE | env-only | 1 hop (framework default when the section is absent. explicit default 1 when the section exist... | `ForwardedHeadersConfiguration.cs` |
 | `ForwardedHeaders:KnownNetworks` | both | LIVE | deploy-topology | framework loopback-only trust (only a proxy on 127.0.0.1/::1 is honoured). the loopback defaul... | `ForwardedHeadersConfiguration.cs` |
 | `ForwardedHeaders:KnownProxies` | both | LIVE | env-only | empty. framework loopback defaults retained unless KnownNetworks or KnownProxies has at least ... | `ForwardedHeadersConfiguration.cs` |
@@ -375,7 +382,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 |---|---|---|---|---|---|
 | `Branding:LogoUrl` | Portal | LIVE | deploy-topology | "" (no logo in mail) | `EmailService.cs` |
 | `Branding:SchedulingUrl` | Portal | LIVE | deploy-topology | "" | `EmailService.cs` |
-| `Branding:UnsubscribeBaseUrl` | Portal | LIVE | deploy-topology | "" (link rendered as bare recipient UUID) | `shared/FebrisSharedServices/EmailService.cs` |
+| `Branding:UnsubscribeBaseUrl` | Portal | LIVE | deploy-topology | "" (link rendered as bare recipient UUID) | `Febris_Shared/shared/FebrisSharedServices/EmailService.cs` |
 
 - **`Branding:LogoUrl`**: NOT in any template.
 - **`Branding:SchedulingUrl`**: NOT in any template.
@@ -399,7 +406,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `ConfigValidation:FailFastOnUnresolvedPlaceholders` | both | LIVE | committed-default | false: unresolved {Placeholder} values are only logged as a warning | `shared/FebrisSharedServices/ConfigurationPlaceholderValidator.cs` |
+| `ConfigValidation:FailFastOnUnresolvedPlaceholders` | both | LIVE | committed-default | false: unresolved {Placeholder} values are only logged as a warning | `Febris_Shared/shared/FebrisSharedServices/ConfigurationPlaceholderValidator.cs` |
 
 - **`ConfigValidation:FailFastOnUnresolvedPlaceholders`**: NOT in any template. GOTCHA: the single-arg Validate() decides Development from the ASPNETCORE_ENVIRONMENT env var (:62-67), not from IWebHostEnvironment. Program.cs forces the host environment via UseEnvironment without setting that var, so a DEBUG run without ASPNETCORE_ENVIRONMENT still scans (warn-only) and a Release run with ASPNETCORE_ENVIRONMENT=Development skips the scan entirely.
 
@@ -407,7 +414,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `Serilog:FailFastOnSinkBindingErrors` | both | LIVE | local-override | false: binding problems are printed to stderr (:82) and the host continues, possibly logging n... | `shared/FebrisSharedServices/SerilogStartupValidator.cs` |
+| `Serilog:FailFastOnSinkBindingErrors` | both | LIVE | local-override | false: binding problems are printed to stderr (:82) and the host continues, possibly logging n... | `Febris_Shared/shared/FebrisSharedServices/SerilogStartupValidator.cs` |
 | `Serilog:WriteTo:1:Name=RollingFile + Args:pathFormat (Dev overlays)` | neither | DEAD-CODE-PATH | local-override | Omitting the overlay entry restores the committed File sink at index 1. | `Present only in API appsettings.Development.json and Portal...` |
 | `Serilog:WriteTo:1:Name=RollingFile + Serilog:WriteTo:1:Args:pathFormat (appsettings.Development.json only)` | neither | DEAD-CODE-PATH | local-override | Omitting the overlay entry restores the committed File sink. The pathFormat value goes nowhere... | `Program.cs` |
 
@@ -427,7 +434,7 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | both | LIVE | env-only | Validator runs in non-Development mode (warns/throws on placeholders). host environment unaffe... | `shared/FebrisSharedServices/ConfigurationPlaceholderValidator.cs` |
+| `ASPNETCORE_ENVIRONMENT` | both | LIVE | env-only | Validator runs in non-Development mode (warns/throws on placeholders). host environment unaffe... | `Febris_Shared/shared/FebrisSharedServices/ConfigurationPlaceholderValidator.cs` |
 
 - **`ASPNETCORE_ENVIRONMENT`**: Two different Development switches exist on the node: this env var (validator, and the central SSO at central/FebrisSSO/API/Startup.cs) versus the build configuration (IsDevelopment(), the JwtSigningKeyProvider carve-out, Development overlay loading). Docker images set neither.
 
@@ -458,30 +465,52 @@ JWKS path can be exercised locally. Tokens from a previous run stop validating a
 
 | Key | Hosts | Status | Category | Default when absent | Read at |
 |---|---|---|---|---|---|
-| `ClientDownloads:BaseUrl` | portal | LIVE | operator-choice | `https://www.febr.is`. an absent section keeps that default, so link-out works on a node nobody configured | `shared/FebrisSharedServices/ClientDownloadOptions.cs` |
+| `ClientDownloads:BaseUrl` | portal | LIVE | operator-choice | `https://www.febr.is`. an absent section keeps that default, so link-out works on a node nobody configured | `enduser/FebrisEndUserPortal/ClientDownloadOptions.cs` |
 
-- **`ClientDownloads:BaseUrl`**: Where the Software Repository pages send an operator when this node holds **no local copy** of a client package. A node's catalogue starts empty and only fills through a manual portal upload or a feed sync, and nothing obliges a self-host operator to do either, so before this those pages were a permanent dead end on every fresh deployment for software that does exist.
+- **`ClientDownloads:BaseUrl`**: Where the Software Repository pages send an operator when this node holds **no local copy** of a client package. A node's catalogue starts empty and fills only through a feed sync, and nothing obliges a self-host operator to run one, so before this those pages were a permanent dead end on every fresh deployment for software that does exist.
 
-  **Local package always wins.** This is consulted only when nothing is held, so an operator who uploads their own build keeps serving it and never sees an external link. **Blank it to disable link-out entirely**: an air-gapped node then shows the plain empty state and renders no external URL at all, which is the supported air-gap posture. A LAN mirror is the other option, since any `http(s)` root serving the same page works, including one under a subdirectory.
+  > **CORRECTED 2026-09-08.** This paragraph used to say the catalogue fills "through a manual portal upload or a feed sync", and the paragraph below said an operator "who uploads their own build" keeps serving it. The upload path was removed on 2026-08-31, which the `PackageFeed:Url` entry above states correctly. This entry was missed by that edit and contradicted it.
+
+  **A held package always wins.** This is consulted only when nothing is held, so an operator whose feed sync has brought a build in keeps serving it and never sees an external link. **Blank it to disable link-out entirely.** An air-gapped node then shows the plain empty state and renders no external URL at all, which is the supported air-gap posture. A LAN mirror is the other option, since any `http(s)` root serving the same page works, including one under a subdirectory.
 
   A value that is not an absolute `http` or `https` URL is rejected and treated as disabled, deliberately, so a typo cannot become a relative link resolving against the node's own host and sending an operator to a 404 on their own portal.
 
   **Rendering a link is not a network call.** The node never requests these URLs and sends nothing anywhere. Only the operator's browser travels, and only if they click, so the node's offline-first posture is unchanged. The per-kind anchors this appends (`#pc`, `#mobile-server`, `#mobile-companion`, `#sdk-csharp`, `#sdk-cpp`) are a contract with the landing site generator and are pinned by `ClientDownloadOptionsTests`.
 
-### `GeoDataUrls`
+### `GeoDataUrls` (REMOVED)
 
-| Key | Hosts | Status | Category | Default when absent | Read at |
-|---|---|---|---|---|---|
-| `GeoDataUrls:GeoCoderServerAPIUrl` | Portal | DEAD-CODE-PATH | residue | No observable difference on a node: the guard returns null before the read. If the guard were ... | `shared/FebrisSharedServices/Geocoder.cs` |
+**No `GeoDataUrls` key exists on either host, and nothing reads one.** The section is kept here so
+an operator upgrading from an earlier node, or reading an older template, can see that its absence
+is deliberate rather than an omission.
 
-- **`GeoDataUrls:GeoCoderServerAPIUrl`**: read by Geocoder, whose only callers are LocationLogic.Create/Update behind `if (!IsLocalAdmin() \|\| !IsLocalFebrisAdmin()) return null.` -- a De Morgan inversion requiring BOTH Admin and SuperAdmin, and SuperAdmin is not a node role. Unreachable on a node until that guard is fixed (docs/BUGS.md). Kept because the geocoder is real code with a real bug, not residue. (census: LIVE).
+It configured a geocoding endpoint called from `LocationLogic.Create` and `.Update` to stamp
+coordinates onto a saved Location. Three independent facts made it residue rather than a feature.
+
+1. **Nothing read the coordinates.** Their only consumer was the Leaflet map partial on
+   `enduser/FebrisEndUserPortal/Views/Location/Index.cshtml`, which the owner ruled out and ROADMAP 18 removed.
+2. **The callers were unreachable anyway.** Both sit behind
+   `if (!IsLocalAdmin() || !IsLocalFebrisAdmin()) return null`, a De Morgan inversion demanding
+   BOTH Admin and SuperAdmin, and SuperAdmin is not a node role. The guard bug is recorded in
+   the project's internal bug register and is unaffected by this removal.
+3. **The key shipped blank, so the call could not succeed.** An empty value threw
+   `UriFormatException` inside `Geocoder.GetGeoCodes`, whose catch suppressed it and returned the
+   fallback coordinates 39.8283 and -98.5795, the geographic centre of the United States.
+
+Removing the callers therefore changes no observable behaviour. What it does change is the node's
+network posture, which is why it is worth recording. `Geocoder` was the last thing that could
+originate an outbound request without an operator configuring one. A node now reaches the network
+only for destinations an operator has explicitly named, namely mail and the client artifact feed.
+
+`Geocoder` itself still exists in the published `Febris.SharedServices` package and is untouched
+here, because removing a public type from a released package is a breaking change for no gain. It
+has no caller in this repository.
 
 
 ## Not wired: external identity providers
 
 The Portal template used to carry an `ExternalAuthProviders` section with Google, Microsoft and
 OpenID Connect entries. It was scaffolding: every `AddGoogle`, `AddMicrosoftAccount` and
-`AddOpenIdConnect` call in `LocalUtility/ExternalAuthProviderRegistration.cs` is commented out and
+`AddOpenIdConnect` call in `enduser/FebrisEndUserPortal/LocalUtility/ExternalAuthProviderRegistration.cs` is commented out and
 no authentication package is referenced by the Portal project, so `Enabled: true` had exactly the
 effect of `false`. The section is gone from the template so that nobody configures a provider and
 waits for it to work. The registration code and its options type remain, as the starting point.
@@ -525,7 +554,7 @@ Each of these was in one or both templates and is read by nothing that runs on a
 | `LicenseKey` | legacy hub-federation fallback pair with ApiUrlPath. The code path stays for existing deployments (HubFederationGateTests), the templates stop advertising it. Configure HubFederation instead. |
 | `ApiUrlPath` | see LicenseKey. |
 | `EmailSender (API host)` | no IEmailSender registration and no mail consumer on the API host. The Portal keeps its section. |
-| `GeoDataUrls (API host)` | no Geocoder reference on the API host. The Portal keeps GeoCoderServerAPIUrl. |
+| `GeoDataUrls` (both hosts) | the API host never referenced Geocoder. The Portal's `GeoCoderServerAPIUrl` has now gone too, since its callers were removed. See the `GeoDataUrls` (REMOVED) section above. |
 | `GeoDataUrls:TileServerAPIUrl` | fed a Leaflet map broken at three levels. The whole map surface was removed per the owner ruling "remove the map surface, do not vendor the library". |
 | `JwtSettings:Issuer` | the API's AddJwtBearer registration never executes (UseAuthentication is commented out, and the custom filter validates with ValidateIssuer=false) and the mint stamps no iss claim. |
 | `JwtSettings:Audience` | same as Issuer, ValidateAudience=false and no aud claim minted. |

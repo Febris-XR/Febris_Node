@@ -29,12 +29,11 @@ dotnet build enduser/FebrisEndUserApi/Febris.UserNode.Api.csproj
 dotnet build enduser/FebrisEndUserPortal/Febris.UserNode.Portal.csproj
 ```
 
-Run the three test suites:
+Run the two test suites:
 
 ```sh
 dotnet test tests/FebrisArchitectureTests/Febris.ArchitectureTests.csproj
 dotnet test tests/FebrisEndUserBLLTests/Febris.UserNode.LogicLayer.Tests.csproj
-dotnet test tests/FebrisSharedServicesTests/Febris.SharedServices.Tests.csproj
 ```
 
 Pass each project path explicitly rather than relying on a bare `dotnet build` / `dotnet test`
@@ -63,11 +62,13 @@ already provisioned, breaking the existing Postgres volume and every issued toke
 `--force` only when you mean exactly that. Otherwise keep the `.env` you have.
 
 Then <https://febris.localhost:8443>, logging in with the `NODE_ADMIN_EMAIL` /
-`NODE_ADMIN_PASSWORD` that `generate-env.sh` printed. `curl -k https://febris.localhost:8443/health/ready`
-should report `Healthy`.
+`NODE_ADMIN_PASSWORD` that `generate-env.sh` printed. To check health, use
+`curl http://127.0.0.1:8081/health/ready`, or `./selfhost/smoke.sh` for the whole set. The proxy
+answers 404 for `/health/*` on purpose, so probing it through `https://febris.localhost:8443` is
+not a health failure.
 
 The compose build uses the repository root as its Docker context because the host Dockerfiles
-restore `shared/*` project references, so **rebuild with `docker compose up -d --build`**, not by
+restore from the repository root, so **rebuild with `docker compose up -d --build`**, not by
 building an image from inside a host directory.
 
 Full operator detail -- configuration, TLS, backups, upgrades, troubleshooting -- is in

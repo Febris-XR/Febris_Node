@@ -20,6 +20,13 @@
 #   SecurePolicy=Always, so a working HTTPS front is part of clone-and-run, not an extra.
 #   *.localhost names resolve to loopback in browsers without /etc/hosts edits.
 
+# PINNED, because the backup and restore procedures name volumes by their project prefix. Without
+# this, Compose derives the project name from the directory you cloned into, so any clone not
+# named febris-node makes febris-node_storage a MISSING volume. `docker run -v` CREATES a missing
+# named volume rather than refusing, so the backup would report success and the archive would be
+# empty. Pinning the name makes the documented volume names true for every clone.
+name: febris-node
+
 services:
 
   postgres:

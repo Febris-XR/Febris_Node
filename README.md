@@ -13,9 +13,14 @@ client software to devices. It ships as a Docker Compose stack -- Postgres 16, V
 a web portal, and a Caddy reverse proxy -- and it comes up with no Febris account, no licence
 key, and no service the maintainer operates.
 
-The clone-and-run path in [Quickstart](#quickstart) has been executed end to end on a clean
-host: `generate-env.sh` -> `docker compose up` -> portal login -> `/health/ready` reporting
-`{"status":"Healthy"}` with all four databases checked.
+The clone-and-run path in [Quickstart](#quickstart) has been verified by reading the compose
+file, the scripts and the Caddyfile together, and by checking each command against the code it
+drives. It has **not** been executed end to end on a clean host. Nobody has watched
+`generate-env.sh` run, the stack come up and a first login succeed in one sitting.
+
+That is worth saying plainly rather than leaving you to discover it. If something in the
+quickstart does not behave as written, it is a defect and we want it reported. Open an issue with
+the command you ran and what came back.
 
 ---
 
@@ -90,7 +95,7 @@ gate is enforced. The load-bearing ones:
 
 **A built-in artifact store, and a package feed sync that refuses more than it accepts.** The
 node is the distribution point for its own client software. The surface splits by audience:
-operators upload packages and trigger the feed sync from the **portal**, behind the same
+operators trigger the feed sync from the **portal**, behind the same
 signed-in cookie identity and admin role gates as every other operator action, while devices
 fetch through the API with their own device tokens (`api/CompanionApp` for the Companion APK,
 `api/Module` for entitlement-gated module delivery). A device identity cannot write to the
@@ -103,9 +108,11 @@ operator chooses, and its guarantees are the interesting part:
   malformed checksum, or a download that exceeds the size ceiling is refused with nothing
   written. Verifying afterwards would mean a truncated download had already become a published
   package.
-- **never overwrite.** A UUID already held with a matching checksum is `AlreadyCurrent`. The
-  same UUID advertising *different* bytes is refused and reported -- a release identity does not
-  get to change what it is.
+- **never overwrite a published version.** A UUID already held with a matching checksum is
+  `AlreadyCurrent`. That same UUID advertising the *same version* with different bytes is refused
+  and reported, because a release that is out must not change what it is. A **new** version on
+  that UUID is an ordinary update and is ingested, which is what makes a UUID a stable release
+  identity rather than a per-file one.
 - **oldest-first, as a correctness requirement.** The catalogue resolves "latest" by row
   timestamp, so whatever lands last is what devices are offered. Entries are therefore applied
   in ascending version order. Newest-first would leave every node serving the *oldest* release
@@ -117,9 +124,7 @@ operator chooses, and its guarantees are the interesting part:
 Two honest limits on that. The feed format carries a `signerSha256` per payload -- the SHA-256 of
 the signing certificate, the only field in a manifest that speaks to *origin* rather than
 integrity -- but the node does **not** yet pin or enforce it. Today it verifies the artifact
-checksum only. And the manual `Upload` path records the SHA-256 of what it stored rather than
-checking it against a declared value, because on that path there is no manifest to check
-against.
+checksum only.
 
 **LRS-style xAPI ingest with statement-UUID dedupe.** Statements arrive from at-least-once
 producers: a lost response re-POSTs the same statement, and a crash between upload and file-move
@@ -153,22 +158,40 @@ git clone https://github.com/Febris-XR/Febris_Node.git febris-node && cd febris-
 docker compose up -d --build        # first build takes a few minutes
 ```
 
-Then open **https://febris.localhost:8443**. `generate-env.sh` prints your first-login
+Then open **https://febris.localhost:8443**, from the machine running Docker. That name resolves
+to loopback, so on a headless server tunnel it with `ssh -L 8443:127.0.0.1:8443 you@server` and
+open the same URL at the other end. `generate-env.sh` prints your first-login
 credentials and stores them in `.env`. Change the password immediately -- it was generated on
 your machine, but it is sitting in a file.
 
 Verify:
 
 ```sh
-curl -k https://febris.localhost:8443/health/ready   # {"status":"Healthy", ...}
-docker compose ps                                    # postgres, valkey, node-api, node-portal, proxy
+./selfhost/smoke.sh   # every service up, both probes healthy, proxy still refusing /health/*
 ```
 
-`/health/ready` reports each database independently, so a partial failure names the one that is
-down. `/health/live` answers as long as the process is up. Both are anonymous, for container and
-orchestrator probes. The bundled Caddy certificate is self-signed, which is why `curl` needs
-`-k` and your browser warns once -- see [`SELF_HOSTING.md`](SELF_HOSTING.md) for putting your own
-proxy in front.
+That is the same check every other procedure in [`SELF_HOSTING.md`](SELF_HOSTING.md) ends with, and
+it exits non-zero if anything fails. To do it by hand instead:
+
+```sh
+curl http://127.0.0.1:8081/health/ready   # {"status":"Healthy","totalDurationMs":7}
+docker compose ps                          # postgres, valkey, node-api, node-portal, proxy
+```
+
+Probe the API on its own loopback port rather than through the proxy. Caddy answers 404 for
+`/health/*` deliberately, so dependency health is not readable by anyone who can reach the site.
+That refusal lives in `selfhost/Caddyfile` and is the reason this command does not use the 8443
+URL.
+
+`/health/live` answers as long as the process is up. `/health/ready` runs every dependency check
+and by default reports only the overall status and a duration. Set
+`HealthChecks:DetailedResponse=true` for the per-check array that names each database, cache and
+storage probe separately, which is what you want when something is wrong and not before. Both
+endpoints are anonymous, for container and orchestrator probes.
+
+The bundled Caddy certificate is self-signed, so your browser warns once, and any `curl` against
+the 8443 URL needs `-k` -- see [`SELF_HOSTING.md`](SELF_HOSTING.md) for putting your own proxy in
+front.
 
 [`SELF_HOSTING.md`](SELF_HOSTING.md) is the full operator story: what each container does, the
 environment variables, TLS, backups, upgrades, deploying the client suite through your node, and
@@ -189,8 +212,8 @@ Both sit on `Febris.UserNode.LogicLayer` (business logic) over
 `Febris.UserNode.DataAccessLayer` (EF Core), which owns four Postgres databases -- user, data,
 xAPI and analytics -- plus the artifact storage seam. Beneath that is the shared triad:
 `Febris.EnumLibrary`, `Febris.ModelLibrary` and `Febris.SharedServices`. `Febris.XApi.Models`,
-the netstandard2.0 xAPI contract, is vendored in-tree for this first cut and becomes a NuGet
-`PackageReference` once it is published separately.
+the netstandard2.0 xAPI contract, is a published NuGet package like the rest of the triad.
+Nothing shared is vendored as source in this repository.
 
 Valkey (Redis-protocol) is optional and the node adapts to its absence: configured, sessions use
 a server-side ticket store with an HTTPS-strict cookie. Not configured, the encrypted ticket
@@ -224,8 +247,13 @@ resolves the controllers' dependency graphs, the same resolutions the first inbo
 performs. "Works with no hub" is therefore a build gate rather than a promise. **A node with
 default configuration makes no outbound call to any Febris service.**
 
-Also not here: the Windows/PC client, the Android suite, and the simulation SDKs live in
-separate repositories that are not yet published.
+Also not here, and all of it is published elsewhere. The **simulation SDKs** are on nuget.org, on
+the [Febris_SDK releases](https://github.com/Febris-XR/Febris_SDK/releases) page and through a
+vcpkg registry. The **Windows/PC suite** is on the
+[Febris_PC releases](https://github.com/Febris-XR/Febris_PC/releases) page and the **Android
+suite** on the [Febris_MobileSuite releases](https://github.com/Febris-XR/Febris_MobileSuite/releases)
+page, both at v0.2.0. None of them reaches a node's catalogue on its own. That takes a feed sync
+against a manifest you host, which [`SELF_HOSTING.md`](SELF_HOSTING.md) covers.
 
 ---
 
@@ -259,18 +287,20 @@ Pre-1.0, and honest about it.
 - **No long-term-support branch.** Fixes land on the default branch. Upgrades run migrations at
   startup. Take a database backup first, because there is no downgrade path yet.
 - **Interfaces may change** before 1.0, including configuration keys and API routes.
-- **Test suites are green** and are the honest measure of what is pinned: 298 node business-logic
-  tests, 391 in the node slice of the shared-services suite, and 5 architecture tests. They ship
-  in this repository -- [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test`
-  commands.
-- **Known gaps**, stated rather than discovered. Package feed sync has no portal button and no
-  scheduler, so an operator invokes it by hand or from cron. Its tests fake the HTTP fetch and
+- **Test suites are green** and are the honest measure of what is pinned. Measured by running
+  them on 2026-09-09, the business-logic suite is 879 tests with 21 skipped, and the
+  architecture suite is 115 with 1 skipped. Both ship in this repository and
+  `.github/workflows/build.yml` runs exactly those two.
+  [`CONTRIBUTING.md`](CONTRIBUTING.md) has the per-project `dotnet test` commands. The
+  shared-services suite left with the shared kernel on 2026-08-28 and is not here.
+- **Known gaps**, stated rather than discovered. The feed-sync tests fake the HTTP fetch and
   exercise real storage and catalogues, so the path has not been run against a live public feed.
   `signerSha256` is carried in the feed format but not enforced. External SSO is scaffolding as
   described above.
-- **The Windows and mobile clients are separate repositories and are not yet published.** Until
-  they are, the node's client-distribution surface is exercisable but has nothing public to
-  distribute.
+- **The Windows and mobile clients live in separate repositories** and are published there at
+  v0.2.0. A node serves them only once an operator syncs a feed that lists them, so the
+  client-distribution surface is exercisable against real artifacts rather than only against
+  fixtures.
 
 ---
 
